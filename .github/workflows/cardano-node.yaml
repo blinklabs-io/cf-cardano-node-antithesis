@@ -1,7 +1,7 @@
 name: "Test cardano-node"
 env:
   TESTNET: "cardano_node_master"
-  REGISTRY: ghcr.io/cardano-foundation/moog
+  REGISTRY: ghcr.io/cardano-foundation/cardano-node-antithesis
   EMAILS: 'antithesis@cardanofoundation.org'
   DURATION: ${{ inputs.duration || 3 }}
 on:
