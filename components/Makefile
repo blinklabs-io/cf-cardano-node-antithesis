@@ -44,7 +44,7 @@ build-config: TESTNET ## Build config container image
 	docker build \
 		--label "org.opencontainers.image.source=${source}" \
 		-f config/Dockerfile \
-		-t ${registry}/config:latest testnets/${testnet}
+		-t ${registry}/config:latest ../testnets/${testnet}
 
 publish-test-config-image: TESTNET build-config push-config ## Publish config container image
 
@@ -72,7 +72,4 @@ validate: TESTNET ## Check for consensus among all pools
 	docker exec -ti sidecar /opt/antithesis/test/v1/convergence/eventually_converged.sh
 
 TESTNET: ;
-	@if [ -z "${testnet}" ]; then \
-		echo "* Please define the testnet argument:"; echo "testnet=example_10.2.1"; \
-		echo; exit 1;
-	else export "testnet=${testnet}"; fi
+	@if [ -z "${testnet}" ]; then echo "* Please define the testnet argument:"; echo "testnet=example_10.2.1"; echo; exit 1; else export "testnet=${testnet}"; fi
