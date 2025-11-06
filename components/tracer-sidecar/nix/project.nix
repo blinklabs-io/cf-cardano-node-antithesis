@@ -1,4 +1,4 @@
-{ CHaP, indexState, pkgs, cardano-cli, ... }:
+{ indexState, pkgs, ... }:
 
 let
   shell = { pkgs, ... }: {
@@ -29,7 +29,6 @@ let
     shell = shell { inherit pkgs; };
 
     modules = [ ];
-    inputMap = { "https://chap.intersectmbo.org/" = CHaP; };
   };
   project = pkgs.haskell-nix.cabalProject' mkProject;
 
