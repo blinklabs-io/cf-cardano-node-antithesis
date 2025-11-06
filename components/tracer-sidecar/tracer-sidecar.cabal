@@ -23,22 +23,15 @@ common warnings
 
 executable tracer-sidecar
   import:           warnings
-  main-is:          Main.hs
+  main-is:          main.hs
 
   -- other-extensions:
   build-depends:
-    , aeson
-    , aeson-qq
     , base
-    , bytestring
-    , directory
-    , filepath
-    , text
     , tracer-sidecar
 
   hs-source-dirs:   app
   default-language: Haskell2010
-  other-modules:    Antithesis
 
 library
   import:          warnings
@@ -49,11 +42,14 @@ library
     , base
     , bytestring
     , containers
+    , directory
+    , filepath
     , text
     , time
     , transformers
 
   exposed-modules:
+    App
     Cardano.Antithesis.LogMessage
     Cardano.Antithesis.Sdk
     Cardano.Antithesis.Sidecar
