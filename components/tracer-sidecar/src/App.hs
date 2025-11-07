@@ -19,6 +19,7 @@ import Control.Concurrent
     , threadDelay
     )
 import Control.Concurrent.Async (async, link, wait)
+import Control.Exception (SomeException, try)
 import Control.Monad
     ( filterM
     , forM
@@ -47,7 +48,9 @@ import System.FilePath
 import System.IO
     ( BufferMode (LineBuffering)
     , IOMode (..)
+    , SeekMode (..)
     , hIsEOF
+    , hSeek
     , hSetBuffering
     , stdout
     , withFile
@@ -107,20 +110,33 @@ tailJsonLinesFromTracerLogDir dir action = go mempty
                 let newFiles = newSet `Set.difference` seen
                 if null newFiles
                     then do
-                        threadDelay 10000
+                        threadDelay 1000000
                         sample
                     else return newFiles
         newFiles <- sample
         forM_ newFiles $ \path -> link <=< async $ do
-            withFile path ReadMode $ \h -> do
-                forever $ do
-                    eof <- hIsEOF h
-                    if eof
-                        then do
-                            threadDelay 10000
-                        else do
-                            l <- B8.hGetLine h
-                            callback l
+            print $ "Tailing file: " <> path
+            exited <- try
+                $ withFile path ReadMode
+                $ \h -> do
+                    hSeek h SeekFromEnd 0
+                    hSetBuffering h LineBuffering
+                    forever $ do
+                        eof <- hIsEOF h
+                        if eof
+                            then do
+                                threadDelay 10000
+                            else do
+                                l <- B8.hGetLine h
+                                callback l
+            case exited of
+                Left (e :: SomeException) ->
+                    putStrLn
+                        $ "Error reading file "
+                            <> path
+                            <> ": "
+                            <> show e
+                Right _ -> print $ "Finished reading file: " <> path
         go (seen <> newFiles)
       where
         -- switch to unbuffered mode and follow new data
