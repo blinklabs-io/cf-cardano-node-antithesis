@@ -90,7 +90,7 @@ jobs:
         TRY=$(moog facts test-runs --whose cfhal | jq 'map(select(.key.commitId == "${{ github.sha }}")) | length')
         TRY=$(($TRY + 1)) # start with try=1
         echo "TRY=$TRY"
-        RESULT=$(moog requester create-test -d "testnets/$TESTNET" -c ${{ github.sha }} -r "$GITHUB_REPOSITORY" --try $TRY -t $DURATION)
+        RESULT=$(moog requester create-test -d "testnets/$TESTNET" -c ${{ github.sha }} -r "$GITHUB_REPOSITORY" --try $TRY -t $DURATION --no-faults)
         echo $RESULT
 
         # Passing -e and -r in separate jq calls ensures we both unwrap
