@@ -22,7 +22,7 @@ x-cardano-node: &cardano-node
 
 services:
   configurator:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/configurator:latest
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/configurator:aa43ea4
     container_name: configurator
     volumes:
       - ./testnet.yaml:/testnet.yaml #  source of configurations
@@ -33,7 +33,7 @@ services:
       - p5-configs:/configs/5 # configs for p5
 
   tracer:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer:latest
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer:aa43ea4
     hostname: tracer.example
     container_name: tracer
     volumes:
@@ -83,7 +83,7 @@ services:
       - tracer:/tracer
 
   sidecar:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/sidecar:latest
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/sidecar:aa43ea4
     container_name: sidecar
     hostname: sidecar.example
     environment:
@@ -92,7 +92,7 @@ services:
       always
 
   tracer-sidecar:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer-sidecar:latest
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer-sidecar:aa43ea4
     container_name: tracer-sidecar
     hostname: tracer-sidecar.example
     environment:
