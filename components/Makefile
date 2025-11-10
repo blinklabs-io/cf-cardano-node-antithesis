@@ -15,7 +15,7 @@ build-shared:
 		-t ${registry}/sidecar:latest sidecar
 	docker build \
 	    --label "org.opencontainers.image.source=${source}" \
-		-f tracer/Dockerfile.compiled \
+		-f tracer/Dockerfile\
 		-t ${registry}/tracer:latest tracer
 	docker build \
 	    --label "org.opencontainers.image.source=${source}" \
