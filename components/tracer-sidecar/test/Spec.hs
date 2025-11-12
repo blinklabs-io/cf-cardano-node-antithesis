@@ -80,7 +80,7 @@ spec = do
                 r <- newMVar []
                 thread <-
                     async
-                        $ tailJsonLinesFromTracerLogDir dir
+                        $ tailJsonLinesFromTracerLogDir False dir
                         $ collectAllInts r
                 let nFiles = 10
                 let nValues = 130

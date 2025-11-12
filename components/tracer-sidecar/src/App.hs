@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Use when" #-}
 
 module App
     ( main
@@ -29,6 +32,7 @@ import Control.Monad
     , forM_
     , forever
     , guard
+    , when
     , (<=<)
     )
 import Data.Aeson
@@ -57,7 +61,9 @@ import System.FilePath
 import System.IO
     ( BufferMode (LineBuffering)
     , IOMode (..)
+    , SeekMode (SeekFromEnd)
     , hIsEOF
+    , hSeek
     , hSetBuffering
     , stdout
     , withFile
@@ -89,6 +95,7 @@ main = do
     threads <- forM nodeDirs $ \nodeDir ->
         async
             $ tailJsonLinesFromTracerLogDir
+                True
                 nodeDir
                 (modifyMVar_ mvar . flip (processMessageIO spec))
     traverse_ wait threads
@@ -100,10 +107,11 @@ main = do
 -- in the directory
 tailJsonLinesFromTracerLogDir
     :: FromJSON a
-    => FilePath -- directory to watch
+    => Bool
+    -> FilePath -- directory to watch
     -> (a -> IO ()) -- action on each decoded log message
     -> IO ()
-tailJsonLinesFromTracerLogDir dir action = go mempty
+tailJsonLinesFromTracerLogDir skip dir action = go mempty
   where
     callback bs = case eitherDecode $ BL.fromStrict bs of
         Right msg -> action msg
@@ -127,6 +135,8 @@ tailJsonLinesFromTracerLogDir dir action = go mempty
                 $ withFile path ReadMode
                 $ \h -> do
                     hSetBuffering h LineBuffering
+                    when skip
+                        $ hSeek h SeekFromEnd 0
                     forever $ do
                         eof <- hIsEOF h
                         if eof
