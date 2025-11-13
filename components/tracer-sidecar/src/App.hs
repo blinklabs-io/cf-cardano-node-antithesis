@@ -12,8 +12,8 @@ module App
 where
 
 import Cardano.Antithesis.Sdk
-    ( sometimesFailed
-    , sometimesTracesDeclaration
+    ( sometimesTracesDeclaration
+    , sometimesTracesReached
     , writeSdkJsonl
     )
 import Cardano.Antithesis.Sidecar
@@ -39,7 +39,6 @@ import Control.Monad
 import Control.Monad.Fix (fix)
 import Data.Aeson
     ( FromJSON
-    , ToJSON (..)
     , eitherDecode
     )
 import qualified Data.ByteString.Char8 as B8
@@ -106,7 +105,7 @@ main = do
                     else return nodeDirs'
     let spec = mkSpec nPools
 
-    writeSdkJsonl $ sometimesFailed "find log files" $ toJSON nodeDirs
+    writeSdkJsonl $ sometimesTracesReached "find log files"
 
     mvar <- newMVar =<< initialStateIO spec
     threads <- forM nodeDirs $ \nodeDir ->
