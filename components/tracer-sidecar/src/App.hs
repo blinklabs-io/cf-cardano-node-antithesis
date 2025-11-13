@@ -48,7 +48,8 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeM)
 import System.Directory
-    ( listDirectory
+    ( createDirectoryIfMissing
+    , listDirectory
     )
 import System.Environment
     ( getArgs
@@ -86,6 +87,7 @@ main = do
 
     writeSdkJsonl $ sometimesTracesDeclaration "finds all node log files"
 
+    createDirectoryIfMissing True dir
     nodeDirs <- fmap (dir </>) <$> listDirectory dir
 
     let spec = mkSpec nPools
