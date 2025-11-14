@@ -21,7 +21,7 @@ on:
        no-faults:
         description: 'Run the test without injecting faults'
         required: false
-        default: true
+        default: false
         type: boolean
   schedule:
     # run every 6 hours
