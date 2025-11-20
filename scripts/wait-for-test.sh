@@ -7,6 +7,8 @@ set -euo pipefail
 
 ID="$1"
 
+unset MOOG_WALLET_FILE
+
 function query_run() { moog facts test-runs --test-run-id "$ID"; }
 
 echo "waiting to be accepted..."
