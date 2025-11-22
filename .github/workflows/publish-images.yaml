@@ -1,8 +1,8 @@
-name: "Push Cardano Node Antithesis Images"
+name: "Build and push component images"
 env:
   REGISTRY: ghcr.io/cardano-foundation/cardano-node-antithesis
 on:
-  # can be dispatched manually
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -27,6 +27,16 @@ jobs:
       with:
         ref: ${{ github.event.inputs.ref_name || '' }}
 
+    - uses: cachix/install-nix-action@v31
+      with:
+        extra_nix_config: |
+          trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+          substituters = https://cache.iog.io https://cache.nixos.org/
+          accept-flake-config = true
+    - uses: cachix/cachix-action@v15
+      with:
+        name: paolino
+        authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
     - name: 🔑 Login Docker Registry
       uses: docker/login-action@v3
       with:

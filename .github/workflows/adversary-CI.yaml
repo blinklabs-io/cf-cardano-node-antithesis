@@ -12,7 +12,7 @@ jobs:
     steps:
       - run: sudo rm -rf /opt&
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-
         with:
           extra_nix_config: |
             trusted-public-keys = hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
