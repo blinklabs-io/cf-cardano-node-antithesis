@@ -95,6 +95,8 @@ services:
     image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer-sidecar:d401b28
     container_name: tracer-sidecar
     hostname: tracer-sidecar.example
+    command:
+      - "/opt/cardano-tracer/logs"
     environment:
       POOLS: "5"
     volumes:
