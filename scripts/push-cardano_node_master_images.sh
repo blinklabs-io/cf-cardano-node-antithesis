@@ -54,14 +54,27 @@ for entry in "${ENTRIES[@]}"; do
     continue
   fi
 
-  # ---- Build image ----
-  echo "Building $NAME from $BUILD_DIR ..."
-  docker build \
-    --pull \
-    -t "$REGISTRY/$NAME:$TAG" \
-    -t "$REGISTRY/$NAME:$COMMIT" \
-    "$BUILD_DIR"
+  cd "$BUILD_DIR"
+  echo "Current directory: $(pwd)"
+  ls -la
 
+  # try to use nix build .#docker-image if possible or fallback to docker build
+  if nix eval --raw ".#docker-image" >/dev/null 2>&1; then
+      echo "Building $NAME using from $CLONE_DIR using nix ..."
+        nix build ".#docker-image" --out-link "/tmp/${NAME}-docker-image" --print-out-paths
+        docker load -i "/tmp/${NAME}-docker-image"
+        version=$(nix eval --raw ".#version")
+        docker tag "$REGISTRY/$NAME:$version" "$REGISTRY/$NAME:$TAG"
+        docker tag "$REGISTRY/$NAME:$version" "$REGISTRY/$NAME:$COMMIT"
+    else
+    # ---- Build image ----
+    echo "Building $NAME from $BUILD_DIR using docker ..."
+    docker build \
+        --pull \
+        -t "$REGISTRY/$NAME:$TAG" \
+        -t "$REGISTRY/$NAME:$COMMIT" \
+        .
+  fi
   # ---- Push both tags ----
   echo "Pushing $NAME ..."
   docker push "$REGISTRY/$NAME:$TAG"
