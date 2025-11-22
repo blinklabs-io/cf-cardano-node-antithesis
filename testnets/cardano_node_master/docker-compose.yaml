@@ -92,7 +92,7 @@ services:
       always
 
   tracer-sidecar:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer-sidecar:367c01a
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer-sidecar:d401b28
     container_name: tracer-sidecar
     hostname: tracer-sidecar.example
     environment:
