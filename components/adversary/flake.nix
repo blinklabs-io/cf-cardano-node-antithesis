@@ -51,6 +51,7 @@
           docker-adversary-image =
             import ./nix/docker-image.nix { inherit pkgs project version; };
           docker-packages = { packages.docker-image = docker-adversary-image; };
+          info.packages = { inherit version; };
           other-tools = {
             packages.cardano-node = cardano-node;
             packages.cardano-cli = cardano-cli;
@@ -60,6 +61,7 @@
             project.packages
             other-tools.packages
             docker-packages.packages
+            info.packages
           ];
 
         in {
