@@ -36,35 +36,59 @@ Implementation considerations:
 - All this might make it necessary to use Nix to get all dependencies working
 
 
-TODO:
-- context
-- what it does
-- who is it for
-- why one would use it
+### Issue
 
-Any details requiring more than three short paragraphs should go in a separate document (typically a white paper).
+To be controlled by antithesis we have to create an idling container with scripts at the special directory `/opt/antithesis/test/v1`
 
-## Pre-requisites
+To test it we have to exec into the container and run the script `parallel_driver_flaky_chain_sync.sh` located at `/opt/antithesis/test/v1/chain-sync-client/`
 
-Describe pre-requisites, in particular:
+The scripts is located in the composer directory of this adversary component.
 
-- skills, experience level
-- deployment (browser, mobile, desktop, cloud...)
-- operating system
-- tools, runtimes (e.g. node.js, nix, ...)
+## Build the image
 
-## Getting started
+### Nix
 
-### Building with nix
+1. Install Nix package manager from https://nixos.org/download.html
+2. Connect to the Cachix cache for faster builds
+    ```bash
+    nix shell nixpkgs#cachix -c cachix use paolino
+    ```
+2. Build the image
+    ```bash
+    nix build .#docker-image
+    version=$(nix eval --raw .#version)
+    docker load < ./result
+    ```
 
-```bash
-nix shell nixpkgs#cachix -c cachix use paolino
-nix build .#adversary
-```
+### Non-nix
 
-## Usage
+There is a Dockerfile available
+1. Build the image
+    ```bash
+    version=$(cat ./version)
+    docker build -t ghcr.io/cardano-foundation/cardano-node-antithesis/adversary:dev -f ./Dockerfile .
+    ```
 
-A few basic examples of how to use (not a complete reference).
+## Run the test script
+
+1. Change the image tag in the compose to `dev`
+    ```bash
+    test=../../testnets/cardano_node_master/docker-compose.yml
+    sed -i 's|ghcr.io/cardano-foundation/cardano-node-antithesis/adversary:.*|ghcr.io/cardano-foundation/cardano-node-antithesis/adversary:dev|' $test
+    ```
+2. Start the testnet
+    ```bash
+    docker compose -f $test up -d
+    ```
+3. Exec into the adversary container
+    ```bash
+    docker compose -f $test exec adversary /bash
+    ```
+4. Run the script
+    ```bash
+    /opt/antithesis/test/v1/chain-sync-client/parallel_driver_flaky_chain_sync.sh
+    ```
+
 
 ## See Also
 
