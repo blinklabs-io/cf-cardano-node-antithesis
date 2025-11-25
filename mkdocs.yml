@@ -30,5 +30,5 @@ nav:
       - Config: components/config.md
       - Adversary: components/adversary.md
   - Testnets:
-      - License: testnets/cardano-node-master.md
+      - Cardano Node Master: testnets/cardano-node-master.md
   - Contributing: contributing.md
