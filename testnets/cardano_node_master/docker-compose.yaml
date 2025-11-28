@@ -86,7 +86,7 @@ services:
       - tracer:/tracer
 
   sidecar:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/sidecar:4fd0ea4
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/sidecar:452fae1
     environment:
       NETWORKMAGIC: 42
       PORT: 3001
