@@ -394,6 +394,10 @@ case "$operation" in
       daily-report-url-scheme-only)
         printf '%s|antithesis://|success|finished\n' "$moog_test_id"
         ;;
+      daily-report-capability)
+        printf '%s|%s?auth=v2.public.abcdef0123456789|success|finished\n' \
+          "$moog_test_id" "$daily_report_url"
+        ;;
       daily-moog-id-empty)
         printf '|%s|success|finished\n' "$daily_report_url"
         ;;

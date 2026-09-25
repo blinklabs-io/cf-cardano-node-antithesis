@@ -1365,6 +1365,20 @@ grep -Eq 'if: \$\{\{ always\(\) \}\}' "$moog_workflow" ||
   fail 'cardano-node.yaml correlation step is not always reached'
 grep -q 'steps.request.outputs.id' "$moog_workflow" ||
   fail 'cardano-node.yaml correlation step does not bind the moog test id'
+# The correlation record strips the report URL's query string before it is
+# written: the signed auth capability never reaches a log or an artifact.
+correlation_step_text=$(awk '
+  /^    - name: Expose MOOG correlation$/ { in_step = 1; next }
+  in_step && /^    - name: / { exit }
+  in_step { print }
+' "$moog_workflow")
+[ -n "$correlation_step_text" ] ||
+  fail 'the Expose MOOG correlation step was not found'
+# shellcheck disable=SC2016 # the literal command text is the assertion's subject
+grep -Fq 'report_url=$(printf' <<<"$correlation_step_text" ||
+  fail 'the correlation step does not capture the report URL'
+printf '%s\n' "$correlation_step_text" | grep -Fq 'report_url%%\?*' ||
+  fail 'the correlation step writes the report URL without stripping the query'
 pass moog-workflow-exposes-correlation
 
 # The run title carries the correlation input only when it is set; the

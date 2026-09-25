@@ -196,7 +196,12 @@ jobs:
           printf 'test_run_id=%s\n' "$TEST_RUN_ID" >"$correlation"
           printf 'phase=%s\n' "$(printf '%s' "$RESULT" | jq -r '.[0].value.phase // "unknown"')" >>"$correlation"
           printf 'outcome=%s\n' "$(printf '%s' "$RESULT" | jq -r '.[0].value.outcome // "-"')" >>"$correlation"
-          printf 'report_url=%s\n' "$(printf '%s' "$RESULT" | jq -r '.[0].value.url // "-"')" >>"$correlation"
+          # The decrypted report URL carries a signed auth capability in its
+          # query string — a credential. Strip it before anything is written:
+          # the record carries scheme, host and path only, and the plaintext
+          # capability never reaches a log or an artifact.
+          report_url=$(printf '%s' "$RESULT" | jq -r '.[0].value.url // "-"')
+          printf 'report_url=%s\n' "${report_url%%\?*}" >>"$correlation"
         else
           {
             printf 'test_run_id=-\n'

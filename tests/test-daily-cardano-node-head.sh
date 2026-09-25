@@ -974,6 +974,23 @@ assert_daily_failure_receipt await-run malformed-report-url
 assert_last_receipt_lacks '^report_url='
 pass daily-report-url-scheme-only
 
+# A report URL carrying its signed auth capability still yields an honest
+# terminal receipt: the capability is stripped, never recorded.
+run_daily daily-report-capability daily-report-capability daily
+require_daily_success daily-report-capability
+assert_last_receipt_contains "report_url=$daily_report_url"
+if grep -Eq 'auth=|\?' < <(grep '^report_url=' "$case_receipt" | tail -1); then
+  fail 'the recorded report URL carries a query string or capability'
+fi
+if grep -Fq 'auth=' "$case_receipt"; then
+  fail 'the receipt leaked the auth capability'
+fi
+if grep -Fq 'auth=' "$case_log"; then
+  fail 'the transport log leaked the auth capability'
+fi
+assert_last_receipt_contains 'terminal_outcome=success'
+pass daily-report-capability-stripped
+
 run_daily daily-moog-id-empty daily-moog-id-empty daily
 require_daily_failure daily-moog-id-empty
 assert_daily_failure_receipt await-run malformed-moog-id

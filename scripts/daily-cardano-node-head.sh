@@ -414,6 +414,10 @@ moog_test_id=${correlation_fields[0]}
 report_url=${correlation_fields[1]}
 terminal_outcome=${correlation_fields[2]}
 terminal_phase=${correlation_fields[3]}
+# A report URL's query string is a signed auth capability — a credential.
+# The receipt records scheme, host and path only, whatever the producer
+# carried; the capability is never written anywhere.
+report_url=${report_url%%\?*}
 [[ "$moog_test_id" =~ ^[^[:space:]]+$ ]] ||
   fail_stage await-run malformed-moog-id
 [ "$terminal_phase" = finished ] ||

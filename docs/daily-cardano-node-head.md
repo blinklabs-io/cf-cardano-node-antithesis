@@ -220,7 +220,7 @@ The receipt is an append-only file of `CandidateReceiptV1` records, one
 | `consumer_sha` | from `prepare-consumer` on (daily modes) |
 | `request` | from `construct-request` on (daily modes) |
 | `workflow_run` | from `submit-run` on (daily modes) |
-| `moog_test_id`, `report_url`, `terminal_outcome` | the terminal `await-run` record only |
+| `moog_test_id`, `report_url`, `terminal_outcome` | the terminal `await-run` record only; `report_url` carries scheme, host and path — its query string (the signed auth capability) is stripped and never recorded anywhere |
 
 A successful manual run ends with the `submit-candidate` record,
 `outcome=PREPARED`, carrying all four agreeing identities. A successful daily
