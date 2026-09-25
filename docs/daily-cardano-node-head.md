@@ -215,7 +215,7 @@ The receipt is an append-only file of `CandidateReceiptV1` records, one
 | `binary_revision` | from `prove-revision` on |
 | `rendered_model` | from `render-topology` on |
 | `topology_services`, `topology_image` | from `verify-topology` on |
-| `submission` | from `submit-candidate` on |
+| `submission` | the `submit-candidate` record only in daily/validation modes; from `submit-candidate` on in manual/test modes |
 | `day`, `claim_ref`, `duration`, `faults`, `consumer_repository`, `run_base` | daily and validation modes, always |
 | `consumer_sha` | from `prepare-consumer` on (daily modes) |
 | `request` | from `construct-request` on (daily modes) |

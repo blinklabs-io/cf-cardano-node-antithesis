@@ -323,6 +323,11 @@ if [ "$mode" != daily ] && [ "$mode" != validation ]; then
   exit 0
 fi
 
+# The fake submission was the internal candidate witness; from here the
+# real submission identity is being built, so no later daily record may
+# claim a fake:// submission.
+unset 'receipt[submission]'
+
 # ---------------------------------------------------------------------------
 # prepare-consumer: the rendered topology becomes its own testnet directory
 # on top of the exact consumer repository main (#216 daily modes only)

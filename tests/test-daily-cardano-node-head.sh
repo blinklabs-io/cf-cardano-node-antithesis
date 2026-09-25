@@ -503,13 +503,13 @@ assert_daily_failure_receipt() {
   assert_last_receipt_contains 'schema=CandidateReceiptV1'
   case "$stage" in
     prepare-consumer)
-      forbidden='^(consumer_sha|workflow_run|moog_test_id|report_url|terminal_outcome)='
+      forbidden='^(submission|consumer_sha|workflow_run|moog_test_id|report_url|terminal_outcome)='
       ;;
     publish-candidate | prove-revision | render-topology | verify-topology | validate-compose | submit-candidate)
       forbidden='^(consumer_sha|workflow_run|moog_test_id|report_url|terminal_outcome)='
       ;;
     claim-day | submit-run | construct-request)
-      forbidden='^(workflow_run|moog_test_id|report_url|terminal_outcome)='
+      forbidden='^(submission|workflow_run|moog_test_id|report_url|terminal_outcome)='
       ;;
     await-run)
       forbidden='^(moog_test_id|report_url|terminal_outcome)='
@@ -549,7 +549,14 @@ assert_daily_complete_receipt() {
   assert_last_receipt_contains "topology_image=$candidate_ref"
   [ -n "$prepared_submission" ] ||
     fail 'no PREPARED submission record to correlate against'
-  assert_last_receipt_contains "submission=$prepared_submission"
+  # The PREPARED record carries the internal fake witness; the terminal
+  # record must never claim a fake submission in daily/validation modes.
+  grep -Fqx "submission=$prepared_submission" "$case_receipt" ||
+    fail 'the PREPARED record lost its submission witness'
+  assert_last_receipt_lacks '^submission='
+  if grep -Fq 'fake://' <<<"$(last_receipt_block)"; then
+    fail 'a daily terminal record claims a fake submission'
+  fi
   assert_last_receipt_contains "consumer_sha=$expected_consumer_sha"
   assert_last_receipt_contains "workflow_run=$daily_run_url"
   assert_last_receipt_contains "moog_test_id=$daily_moog_id"
