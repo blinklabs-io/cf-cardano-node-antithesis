@@ -1602,3 +1602,41 @@ if awk '/^[[:space:]]*run:/{r=1} /^[[:space:]]*(- name|uses|with|env):/{r=0} r' 
   fail 'cardano-node.yaml carries a secret expression inside run text'
 fi
 pass moog-workflow-run-text-secret-free
+
+# ---------------------------------------------------------------------------
+# scripts/wait-for-test.sh: the "Wait for results" step in cardano-node.yaml
+# runs this directly, and every raw fact it prints lands in the live
+# workflow step log. The decrypted report URL in that fact carries a signed
+# auth capability in its query string, so the capability must never reach
+# that log, however many times the script echoes the polled fact.
+# ---------------------------------------------------------------------------
+wait_for_test=$repo_root/scripts/wait-for-test.sh
+wait_stub_bin=$tmp_root/wait-moog-bin
+mkdir -p "$wait_stub_bin"
+wait_capability_url='https://amaru-cardano.antithesis.com/report/stub?auth=v2.public.abcdef0123456789'
+cat >"$wait_stub_bin/moog" <<STUB
+#!/usr/bin/env bash
+set -euo pipefail
+printf '[{"value":{"phase":"finished","outcome":"success","url":"$wait_capability_url"}}]\n'
+STUB
+chmod +x "$wait_stub_bin/moog"
+
+wait_out=$tmp_root/wait-for-test.out
+wait_rc=0
+PATH="$wait_stub_bin:$PATH" \
+  bash "$wait_for_test" \
+  ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  >"$wait_out" 2>&1 || wait_rc=$?
+[ "$wait_rc" -eq 0 ] ||
+  fail "wait-for-test.sh exited $wait_rc: $(cat "$wait_out")"
+# Positive control: the fixture actually carries the capability the script
+# must strip, so a check that finds it absent is not vacuously passing.
+grep -Fq "$wait_capability_url" "$wait_stub_bin/moog" ||
+  fail 'sanity: the moog stub does not embed the capability under test'
+if grep -Fq 'auth=' "$wait_out"; then
+  fail 'wait-for-test.sh printed the signed report-url capability to the log'
+fi
+if grep -Fq '?' "$wait_out"; then
+  fail 'wait-for-test.sh printed a query string from the report url'
+fi
+pass wait-for-test-strips-report-capability
