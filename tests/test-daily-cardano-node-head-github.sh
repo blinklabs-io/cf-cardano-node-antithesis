@@ -1640,3 +1640,85 @@ if grep -Fq '?' "$wait_out"; then
   fail 'wait-for-test.sh printed a query string from the report url'
 fi
 pass wait-for-test-strips-report-capability
+
+# ---------------------------------------------------------------------------
+# The "Expose MOOG correlation" step itself: earlier controls only grepped
+# the step's YAML text for the strip expression, never executed it. Extract
+# the real run: body verbatim and execute it against the same
+# capability-bearing fixture, so the actual artifact and step log it
+# produces are the subject, not the source text describing them.
+# ---------------------------------------------------------------------------
+correlation_step_script=$tmp_root/correlation-step.sh
+awk '
+  /^    - name: Expose MOOG correlation$/ { in_step = 1; next }
+  in_step && /^    - name: / { exit }
+  in_step && /^      run: \|$/ { in_run = 1; next }
+  in_run {
+    if ($0 ~ /^        /) {
+      line = $0
+      sub(/^        /, "", line)
+      print line
+      next
+    }
+    if ($0 ~ /^[[:space:]]*$/) {
+      print ""
+      next
+    }
+    exit
+  }
+' "$moog_workflow" >"$correlation_step_script"
+grep -Fq 'moog facts test-runs' "$correlation_step_script" ||
+  fail 'the extracted Expose MOOG correlation step lost its facts query'
+
+correlation_runner_temp=$tmp_root/correlation-runner-temp
+mkdir -p "$correlation_runner_temp"
+correlation_stdout=$tmp_root/correlation-step.stdout
+correlation_rc=0
+PATH="$wait_stub_bin:$PATH" \
+  RUNNER_TEMP="$correlation_runner_temp" \
+  TEST_RUN_ID=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  bash "$correlation_step_script" >"$correlation_stdout" 2>&1 || correlation_rc=$?
+[ "$correlation_rc" -eq 0 ] ||
+  fail "the Expose MOOG correlation step exited $correlation_rc: $(cat "$correlation_stdout")"
+correlation_produced=$correlation_runner_temp/moog-correlation
+[ -f "$correlation_produced" ] ||
+  fail 'the Expose MOOG correlation step did not write its correlation artifact'
+grep -Fq "report_url=${wait_capability_url%%\?*}" "$correlation_produced" ||
+  fail 'the correlation artifact does not carry the stripped report url'
+if grep -Fq 'auth=' "$correlation_produced" || grep -Fq 'auth=' "$correlation_stdout"; then
+  fail 'the Expose MOOG correlation step leaked the report-url capability'
+fi
+pass moog-correlation-step-strips-capability-executed
+
+# ---------------------------------------------------------------------------
+# Permanent hermetic check: no log, artifact, receipt or captured stdout
+# this suite actually produced may carry the signed report-url capability,
+# whatever print site produced it. This quantifies over every file the run
+# produced instead of enumerating print sites, so a new leak site fails
+# here even before a scenario-specific assertion is written for it.
+#
+# Stub command sources under a "*-bin/" directory legitimately embed the
+# capability as bait for the scenarios above (PATH-injected fixtures, not
+# produced output); everything else under $tmp_root is a produced log,
+# receipt, correlation artifact or captured stdout/stderr.
+# ---------------------------------------------------------------------------
+find_capability_leaks() {
+  find "$tmp_root" -type f -not -path '*-bin/*' -print0 2>/dev/null |
+    xargs -0 grep -lF 'auth=' 2>/dev/null || true
+}
+
+# Positive control: prove the sweep can find a leak before trusting it to
+# report none. A sweep that never fires would silently pass every future
+# regression.
+control_leak_file=$tmp_root/control-leak-marker
+printf 'report_url=https://example.invalid/report?auth=v2.public.deadbeef\n' \
+  >"$control_leak_file"
+control_hits=$(find_capability_leaks)
+rm -f "$control_leak_file"
+grep -Fq "$control_leak_file" <<<"$control_hits" ||
+  fail 'sanity: the capability sweep did not detect a known planted leak'
+
+leaks=$(find_capability_leaks)
+[ -z "$leaks" ] ||
+  fail "a produced log/artifact/receipt carries the report-url capability: $leaks"
+pass no-capability-leak-in-any-produced-artifact
