@@ -1614,9 +1614,14 @@ wait_for_test=$repo_root/scripts/wait-for-test.sh
 wait_stub_bin=$tmp_root/wait-moog-bin
 mkdir -p "$wait_stub_bin"
 wait_capability_url='https://amaru-cardano.antithesis.com/report/stub?auth=v2.public.abcdef0123456789'
+wait_sanitized_url='https://amaru-cardano.antithesis.com/report/stub'
+wait_test_id=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+wait_stub_calls=$tmp_root/wait-moog-calls.log
+: >"$wait_stub_calls"
 cat >"$wait_stub_bin/moog" <<STUB
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "\$*" >>"$wait_stub_calls"
 printf '[{"value":{"phase":"finished","outcome":"success","url":"$wait_capability_url"}}]\n'
 STUB
 chmod +x "$wait_stub_bin/moog"
@@ -1624,8 +1629,7 @@ chmod +x "$wait_stub_bin/moog"
 wait_out=$tmp_root/wait-for-test.out
 wait_rc=0
 PATH="$wait_stub_bin:$PATH" \
-  bash "$wait_for_test" \
-  ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  bash "$wait_for_test" "$wait_test_id" \
   >"$wait_out" 2>&1 || wait_rc=$?
 [ "$wait_rc" -eq 0 ] ||
   fail "wait-for-test.sh exited $wait_rc: $(cat "$wait_out")"
@@ -1639,6 +1643,15 @@ fi
 if grep -Fq '?' "$wait_out"; then
   fail 'wait-for-test.sh printed a query string from the report url'
 fi
+# Reach witnesses: a successful empty run must not pass. The script must
+# have queried MOOG for this test run, and its output must carry the
+# sanitized locator the stub's fact held.
+grep -Fq -- "facts test-runs --test-run-id $wait_test_id" "$wait_stub_calls" ||
+  fail 'wait-for-test.sh never invoked the moog stub for the test run'
+grep -Fq "$wait_sanitized_url" "$wait_out" ||
+  fail 'wait-for-test.sh output lacks the sanitized report locator'
+grep -Fq 'final result:' "$wait_out" ||
+  fail 'wait-for-test.sh output lacks the final result line'
 pass wait-for-test-strips-report-capability
 
 # ---------------------------------------------------------------------------
