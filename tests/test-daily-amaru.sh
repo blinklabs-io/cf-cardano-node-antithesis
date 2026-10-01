@@ -118,7 +118,7 @@ receipt_oracle() {
 
 # An exclusive PATH makes a missing-command verdict caused by absence.
 scheduled_seed_commands=(
-  bash dirname mkdir git jq sed awk grep tail tr head seq sleep date docker nix
+  bash dirname mkdir git jq sed awk grep tail tr head seq sleep date docker nix openssl curl
 )
 
 stub_command() {
@@ -163,6 +163,10 @@ run_case() {
   local head_source=${6:-daily:$default_workflow_head}
   local shared_state=${7:-}
   local controller_under_test=${8:-$controller}
+  if [ -n "$identity" ]; then
+    app_id=${4-test-app-id}
+    app_key=${5-test-app-key}
+  fi
   local head_env=()
   case_number=$((case_number + 1))
   case_dir="$tmp_root/$case_number-$case_name"
@@ -246,6 +250,8 @@ run_hermetic_case() {
     GITHUB_SHA="$default_workflow_head" \
     "${day_env[@]}" \
     DAILY_AMARU_IDENTITY=seed-non-empty-identity \
+    DAILY_AMARU_APP_ID=seed-app-id \
+    DAILY_AMARU_APP_PRIVATE_KEY=seed-app-key \
     DAILY_AMARU_STATE_DIR="$hermetic_state" \
     DAILY_AMARU_RECEIPT="$hermetic_receipt" \
     "$bash_binary" "$script" \
@@ -887,6 +893,91 @@ reject_mutant downgraded.sh "$transport" 's#bootstrap_identity#repository_identi
 printf 'IDENTITY-BOUNDARY bootstrap_ops=%s repository_ops=%s mutants_rejected=2\n' \
   "${#bootstrap_boundary_operations[@]}" "${#repository_boundary_operations[@]}"
 pass dedicated-app-scope
+
+# Consumer identity contract: the consumer clone, push and PR creation use an
+# App installation token scoped to this repository, minted at the write boundary
+# (a job-start token would have expired during the bootstrap wait) and never
+# replaced by the workflow token, whose PR events await approval and run no CI.
+consumer_identity_contract_holds_transport() {
+  consumer_identity_contract_holds "$workflow" "$1"
+}
+consumer_identity_contract_holds_workflow() {
+  consumer_identity_contract_holds "$1" "$transport"
+}
+consumer_identity_contract_holds() {
+  local workflow_file=$1 transport_file=$2 body
+  # The workflow still mints exactly one App token (bootstrap) and carries no
+  # consumer token of its own; its job token stays the repository identity.
+  [ "$(grep -Fc 'uses: actions/create-github-app-token@v1' "$workflow_file")" -eq 1 ] || return 1
+  # shellcheck disable=SC2016
+  [ "$(grep -Fc 'GH_TOKEN: ${{ github.token }}' "$workflow_file")" -eq 1 ] || return 1
+  ! grep -Fq 'CONSUMER' "$workflow_file" || return 1
+  # The transport mints at use, from the App credentials, for this repository
+  # alone and with exactly the three permissions consumer writes need.
+  # shellcheck disable=SC2016
+  [ "$(grep -Fc 'consumer_identity=$(mint_consumer_identity)' "$transport_file")" -eq 1 ] || return 1
+  [ "$(grep -Fc '"repositories":["%s"]' "$transport_file")" -eq 1 ] || return 1
+  # shellcheck disable=SC2016
+  [ "$(grep -Fc '"permissions":{"contents":"write","pull_requests":"write","metadata":"read"}' "$transport_file")" -eq 1 ] || return 1
+  ! grep -Fq 'CONSUMER_IDENTITY' "$transport_file" || return 1
+  body=$(transport_branch "$transport_file" prepare-consumer-repin)
+  [ -n "$body" ] || return 1
+  [ "$(grep -Fc 'consumer_identity' <<<"$body")" -eq 5 ] || return 1
+  ! grep -q 'repository_identity\|bootstrap_identity\|GH_TOKEN' <<<"$body" || return 1
+  return 0
+}
+consumer_identity_contract_holds "$workflow" "$transport" ||
+  fail 'the consumer identity contract does not hold'
+reject_mutant consumer-wide-permissions.sh "$transport" \
+  's#"metadata":"read"}#"metadata":"read","actions":"write"}#' \
+  '"actions":"write"' \
+  'a consumer token with an extra permission' \
+  consumer_identity_contract_holds_transport
+reject_mutant consumer-wide-scope.sh "$transport" \
+  's#"repositories":\["%s"\]#"repositories":["%s","other"]#' \
+  '"repositories":["%s","other"]' \
+  'a consumer token minted for more than this repository' \
+  consumer_identity_contract_holds_transport
+# shellcheck disable=SC2016
+reject_mutant consumer-repository-token.sh "$transport" \
+  's#push_branch "$directory" "$branch" "$consumer_identity"#push_branch "$directory" "$branch" "$repository_identity"#' \
+  'push_branch "$directory" "$branch" "$repository_identity"' \
+  'the repository token reaching the consumer push' \
+  consumer_identity_contract_holds_transport
+# shellcheck disable=SC2016
+reject_mutant consumer-workflow-token.yaml "$workflow" \
+  's#^\(      GH_TOKEN: \).*#\1${{ steps.app-token.outputs.token }}#' \
+  'GH_TOKEN: ${{ steps.app-token.outputs.token }}' \
+  'the bootstrap token replacing the job token' \
+  consumer_identity_contract_holds_workflow
+
+# Absent App credentials: classified failure before any claim, consumer or
+# bootstrap effect; the failure receipt stays reachable. Control: the same case
+# with credentials proceeds past that stage.
+run_case missing-consumer-credentials production seeded-bootstrap-token '' ''
+require_failure
+assert_honest_failure_receipt consumer-identity
+assert_file_contains "$case_receipt" \
+  'error=missing-consumer-credentials-DAILY_AMARU_APP_ID,DAILY_AMARU_APP_PRIVATE_KEY'
+assert_log_count 0 '^claim-sha-attempt '
+assert_no_mutation
+assert_no_launch
+run_case missing-consumer-credentials production seeded-bootstrap-token
+if grep -Fq 'stage=consumer-identity' "$case_receipt" 2>/dev/null; then
+  fail 'consumer credentials control failed at the consumer-identity stage'
+fi
+consumer_mutant="$mutant_root/controller-no-consumer-gate.sh"
+sed '/fail_stage consumer-identity /d' "$controller" >"$consumer_mutant"
+chmod +x "$consumer_mutant"
+! grep -Fq 'missing-consumer-credentials' "$consumer_mutant" ||
+  fail 'controller consumer-gate mutation did not apply'
+run_case missing-consumer-credentials production seeded-bootstrap-token '' '' \
+  "daily:$default_workflow_head" '' "$consumer_mutant"
+if grep -Fq 'stage=consumer-identity' "$case_receipt" 2>/dev/null; then
+  fail 'gate mutant still classified the missing consumer credentials'
+fi
+printf 'CONSUMER-CONTRACT mint=at-use scope=repository permissions=3 mutants_rejected=4 absent=classified controller_mutant_rejected=1\n'
+pass consumer-identity-contract
 
 # INV-213-05: bound exactly once, nowhere else, and never persisted.
 for forbidden in DAILY_AMARU_CROSS_REPO_TOKEN MOOG_GITHUB_PAT GITHUB_ENV; do
@@ -1687,6 +1778,8 @@ issue_225_allowed_paths=(
   tests/fixtures/daily-amaru/fake-transport.sh
   tests/fixtures/daily-amaru/boundary-nix.sh
   tests/fixtures/daily-amaru/boundary-resolver.sh
+  tests/fixtures/daily-amaru/boundary-curl.sh
+  tests/fixtures/daily-amaru/consumer-observation.sh
   tests/fixtures/daily-amaru/test-transport-boundary.sh
   specs/225-transport-value-channel/data-model.md
   specs/225-transport-value-channel/functions-model.md
@@ -2523,7 +2616,7 @@ pass bootstrap-surface-defaults
 boundary_host_bin="$tmp_root/boundary-host/bin"
 boundary_host_log="$tmp_root/boundary-host.log"
 seed_scheduled_path "$boundary_host_bin" without-rg
-for command in cat chmod cp cmp env find gpg ln mktemp mv od rm sort; do
+for command in base64 cat chmod cp cmp env find gpg ln mktemp mv od rm sha256sum sort; do
   target=$(command -v "$command")
   ln -sf "$target" "$boundary_host_bin/$command"
 done
