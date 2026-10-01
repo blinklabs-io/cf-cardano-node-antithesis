@@ -1761,6 +1761,7 @@ issue_225_allowed_paths=(
   .github/workflows/cardano-node.yaml
   specs/216-daily-cardano-node-head-run/plan.md
   specs/216-daily-cardano-node-head-run/tasks.md
+  scripts/wait-for-test.sh
   scripts/head-candidate-cluster.sh
   tests/test-head-candidate-cluster.sh
   .gitignore
