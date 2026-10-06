@@ -50,7 +50,7 @@ x-dingo-env: &dingo-env
   CARDANO_SOCKET_PATH: /ipc/dingo.socket
 
 x-dingo: &dingo
-  image: ghcr.io/blinklabs-io/dingo:0.68.0
+  image: ghcr.io/blinklabs-io/dingo:0.78.0
   command:
     - serve
     - --logging-level
