@@ -218,7 +218,7 @@ services:
   # and ships flock for the composer wrappers; `finally_` commands
   # stopped running to completion at cfg=56.
   tx-generator:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tx-generator:bf48615
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tx-generator:36756d0efcf73f412df42a352afd7d6b0ac3c33d@sha256:85e34c4688b28d2b5dd414f8fed059d83363842324931efb46662822d3c64d31
     platform: linux/amd64
     container_name: tx-generator
     hostname: tx-generator.example
@@ -268,7 +268,7 @@ services:
       - /tmp
 
   tracer-sidecar:
-    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer-sidecar:5271661
+    image: ghcr.io/cardano-foundation/cardano-node-antithesis/tracer-sidecar:36756d0efcf73f412df42a352afd7d6b0ac3c33d@sha256:a04ce507bd8b7bea3fa11d728f2c813ebb8c6557a03f83b789407eb02000270c
     platform: linux/amd64
     container_name: tracer-sidecar
     hostname: tracer-sidecar.example

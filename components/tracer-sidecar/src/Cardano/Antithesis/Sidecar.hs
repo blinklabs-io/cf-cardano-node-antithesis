@@ -41,11 +41,15 @@ import Cardano.Antithesis.Sdk
 import qualified Data.Set as Set
 import qualified Data.Text as T
 
+import Control.Applicative
+    ( (<|>)
+    )
 import Control.Arrow
     ( second
     )
 import Control.Monad
     ( forM_
+    , when
     )
 import Control.Monad.Trans.Writer.Strict
     ( Writer
@@ -91,8 +95,8 @@ defaultK = 432
 defaultDepthCap :: Int
 defaultDepthCap = defaultK * 2
 
-mkSpec :: Int -> Spec
-mkSpec nPools = do
+mkSpec :: Int -> Maybe Text -> Bool -> Spec
+mkSpec nPools consumerHost amaruEnabled = do
     mapM_
         sometimesTraces
         [ "TraceAddBlockEvent.SwitchedToAFork"
@@ -113,6 +117,25 @@ mkSpec nPools = do
     -- Cluster-wide fork-depth probe (#119).
     forkTreeProbe defaultK defaultDepthCap
 
+    forM_ consumerHost $ \host ->
+        amaruConsumerConvergenceProbe nPools host
+
+    when amaruEnabled $ do
+        sometimes "amaru stdout observed" $ \_s LogMessage{details} ->
+            case details of
+                AmaruStdout{} -> True
+                _ -> False
+        alwaysOrUnreachable "no fatal amaru consensus logs"
+            $ \_s LogMessage{details} ->
+                case details of
+                    AmaruStdout{amaruMessage} ->
+                        not
+                            $ T.isInfixOf "Consensus died" amaruMessage
+                                || T.isInfixOf
+                                    "attempted roll back in the future"
+                                    amaruMessage
+                    _ -> True
+  where
     -- Issue #123, Layer 2 was here — a "did the adversary appear in
     -- some producer's InboundGovernor stream" probe via substring
     -- match on @adversary.example@. Verified empirically that
@@ -120,7 +143,7 @@ mkSpec nPools = do
     -- peer IP (192.168.x.y) not hostname, so the substring check
     -- never fires. Re-implementing this needs the tracer-side
     -- hostname↔IP mapping, which is non-trivial. Removed for now.
-  where
+
     recordAllChainPoints :: State -> LogMessage -> [Output]
     recordAllChainPoints
         _s
@@ -169,6 +192,13 @@ data State = State
     -- Surfaces as discrete Sometimes assertions per threshold so
     -- the report renders a depth-by-depth checklist of how deep
     -- the perturbation pushed the cluster.  Issue #123, Layer 3.
+    , producerTipHashes :: !(Set Text)
+    -- ^ Tip hashes observed on producer hosts.  Used by the
+    -- amaru-consumer convergence property.
+    , consumerFirstLen :: !(Maybe Int)
+    -- ^ First observed amaru-consumer chain length.  The
+    -- convergence property only fires after the consumer advances
+    -- beyond this baseline.
     }
 
 initialState :: Spec -> (State, [Output])
@@ -184,6 +214,8 @@ initialState spec =
             , forkObserved = False
             , forkExceededK = False
             , maxForkDepth = 0
+            , producerTipHashes = mempty
+            , consumerFirstLen = Nothing
             }
     setupFns = stateInitFunctions spec
 
@@ -356,7 +388,8 @@ parseTip
 -- update derived flags.  No SDK output here — the
 -- 'sometimes' / 'alwaysOrUnreachable' rules above turn the
 -- flags into observable assertions.
-updateForkTree :: Int -> Int -> State -> LogMessage -> (State, [Output])
+updateForkTree
+    :: Int -> Int -> State -> LogMessage -> (State, [Output])
 updateForkTree k depthCap s LogMessage{host, details} =
     case details of
         AddedToCurrentChain{newTipSelectView, newtip} ->
@@ -378,6 +411,77 @@ updateForkTree k depthCap s LogMessage{host, details} =
                 , maxForkDepth = max d (maxForkDepth st)
                 }
 
+-- Amaru consumer convergence probe (#180) -------------------------------------
+
+amaruConsumerConvergenceProbe :: Int -> Text -> Spec
+amaruConsumerConvergenceProbe nPools consumerHost = do
+    Spec
+        $ tell
+            [ Rule
+                { _ruleProcess = updateAmaruConsumerConvergence nPools consumerHost
+                , ruleDeclaration = Nothing
+                , ruleInit = id
+                }
+            ]
+    sometimes "amaru-served consumer reached producer tip"
+        $ \State{producerTipHashes, consumerFirstLen} LogMessage{host, details} ->
+            case details of
+                AddedToCurrentChain{newTipSelectView, newtip}
+                    | sameHost consumerHost host ->
+                        let newTip = parseTip newTipSelectView newtip
+                        in  maybe
+                                False
+                                ( \firstLen ->
+                                    tipChainLength newTip > firstLen
+                                        && Set.member
+                                            (tipHash newTip)
+                                            producerTipHashes
+                                )
+                                consumerFirstLen
+                _ -> False
+
+updateAmaruConsumerConvergence
+    :: Int -> Text -> State -> LogMessage -> (State, [Output])
+updateAmaruConsumerConvergence nPools consumerHost s LogMessage{host, details} =
+    case details of
+        AddedToCurrentChain{newTipSelectView, newtip}
+            | isProducerHost nPools host ->
+                let newTip = parseTip newTipSelectView newtip
+                in  ( s
+                        { producerTipHashes =
+                            Set.insert (tipHash newTip) (producerTipHashes s)
+                        }
+                    , []
+                    )
+            | sameHost consumerHost host ->
+                let newTip = parseTip newTipSelectView newtip
+                in  ( s
+                        { consumerFirstLen =
+                            consumerFirstLen s
+                                <|> Just (tipChainLength newTip)
+                        }
+                    , []
+                    )
+        _ -> (s, [])
+
+isProducerHost :: Int -> Text -> Bool
+isProducerHost nPools host =
+    let stem = hostStem host
+    in  stem
+            `Set.member` Set.fromList
+                ( ["p" <> T.pack (show i) | i <- [1 :: Int .. nPools]]
+                    ++ ["relay" <> T.pack (show i) | i <- [1 :: Int .. nPools]]
+                    ++ ["amaru-relay-" <> T.pack (show i) | i <- [1 :: Int .. nPools]]
+                    ++ ["bootstrap-producer"]
+                )
+
+sameHost :: Text -> Text -> Bool
+sameHost configured observed =
+    hostStem configured == hostStem observed
+
+hostStem :: Text -> Text
+hostStem host =
+    fromMaybe host (T.stripSuffix ".example" host)
 
 declarations :: Spec -> [Output]
 declarations (Spec s) = mapMaybe (fmap AntithesisSdk . ruleDeclaration) $ execWriter s

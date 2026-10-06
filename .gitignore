@@ -28,3 +28,7 @@ docs/yarn.lock
 .llm/
 .llm/
 WIP.md
+/gate.sh
+
+# mkdocs build output
+site/

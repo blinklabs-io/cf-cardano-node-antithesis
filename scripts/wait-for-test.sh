@@ -9,7 +9,15 @@ ID="$1"
 
 unset MOOG_WALLET_FILE
 
-function query_run() { moog facts test-runs --test-run-id "$ID"; }
+# The decrypted report URL carries a signed auth capability in its query
+# string — a credential. Every poll below echoes the raw fact to this
+# step's workflow log, so the query string is stripped before the fact is
+# ever fetched: only scheme, host and path survive into anything printed.
+function redact_report_url() {
+  jq 'map(.value.url = ((.value.url // "") | sub("\\?.*$"; "")))'
+}
+
+function query_run() { moog facts test-runs --test-run-id "$ID" | redact_report_url; }
 
 echo "waiting to be accepted..."
 while true; do
