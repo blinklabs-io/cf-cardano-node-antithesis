@@ -1897,6 +1897,9 @@ issue_225_allowed_paths=(
   components/tracer-sidecar/test/data/chain-adoptions-run-84894c33.tsv
   components/tracer-sidecar/tracer-sidecar.cabal
   testnets/cardano_amaru/docker-compose.yaml
+  # issue 236 — Cardano Node 11.1.3 rotation: the 11.1 cardano-cli ping surface
+  scripts/smoke-test.sh
+  components/Makefile
 )
 
 register_223_mutant() {
