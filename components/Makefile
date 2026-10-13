@@ -63,7 +63,7 @@ logs: TESTNET ## Tail logs of all containers
 query: TESTNET ## Query tip of all pools
 	pools="$$(awk '/poolCount: /{ print $$2 }' ../testnets/${testnet}/testnet.yaml)" ; \
 	for i in $$(seq 1 $${pools}) ; do docker exec -ti p$${i} \
-		timeout 0.05 cardano-cli ping --magic 42 --host 127.0.0.1 --port 3001 --tip --quiet -c1; \
+		timeout 0.05 sh -c 'cardano-cli ping 127.0.0.1:3001 -m 42 --mode tip --quiet -c1 2>/dev/null || cardano-cli ping --magic 42 --host 127.0.0.1 --port 3001 --tip --quiet -c1'; \
 	done ; \
 	true
 

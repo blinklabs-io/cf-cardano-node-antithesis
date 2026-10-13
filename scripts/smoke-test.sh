@@ -57,8 +57,13 @@ for i in $(seq 1 "$POOLS"); do
     fi
 
     # Query the node tip via cardano-cli ping. `docker compose exec`
-    # resolves the service name regardless of container_name.
+    # resolves the service name regardless of container_name. The 11.1 cli
+    # changed the ping surface (positional address, -m, --mode tip); the
+    # mixed-version cluster carries both, so try each in turn.
     if TIP=$(docker compose -f "$COMPOSE_FILE" exec -T "$NODE" \
+        cardano-cli ping 127.0.0.1:3001 -m "$MAGIC" --mode tip --quiet \
+        -c1 2>/dev/null) ||
+      TIP=$(docker compose -f "$COMPOSE_FILE" exec -T "$NODE" \
         cardano-cli ping --magic "$MAGIC" --host 127.0.0.1 --port 3001 \
         --tip --quiet -c1 2>/dev/null); then
       echo "OK: ${NODE} — ${TIP}"
