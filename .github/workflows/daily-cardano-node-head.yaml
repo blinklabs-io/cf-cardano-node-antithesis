@@ -31,7 +31,7 @@ jobs:
   candidate-tests:
     name: Candidate path hermetic tests
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out the exact candidate
         uses: actions/checkout@v6
@@ -51,7 +51,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch'
       && !inputs.production && !inputs.validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     # The controller publishes one image per upstream SHA under the
     # repository's own GHCR namespace; nothing else is written.
@@ -105,7 +105,7 @@ jobs:
     if: >-
       github.event_name == 'schedule'
       || (github.event_name == 'workflow_dispatch' && inputs.production)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     # The controller publishes the candidate image under the repository's
     # own GHCR namespace and creates the day tag (consumer commit) in this
@@ -166,7 +166,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' && inputs.validation
       && !inputs.production
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     permissions:
       contents: write

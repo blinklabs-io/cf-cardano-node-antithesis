@@ -45,7 +45,7 @@ on:
 
 jobs:
   run-cardano-node:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       MOOG_GITHUB_PAT: ${{ secrets.MOOG_GITHUB_PAT }}
       MOOG_WALLET_FILE: wallet.json

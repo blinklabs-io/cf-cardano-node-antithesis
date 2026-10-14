@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - run: sudo rm -rf /opt&
       - uses: actions/checkout@v6
@@ -37,7 +37,7 @@ jobs:
           path: ./components/tracer-sidecar/tracer-sidecar.AppImage
   unit:
     name: Run unit Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: paolino/dev-assets/setup-nix@v0.0.1
@@ -65,7 +65,7 @@ jobs:
   #       run: nix run .#bench
   code-quality:
     name: Check code quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
       - uses: paolino/dev-assets/setup-nix@v0.0.1

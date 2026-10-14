@@ -23,7 +23,7 @@ jobs:
   daily-amaru-dry-run:
     name: Daily Amaru contract dry run
     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !inputs.production)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out the exact candidate
         uses: actions/checkout@v6
@@ -38,7 +38,7 @@ jobs:
   daily-amaru-scheduled:
     name: Daily Amaru production run
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.production)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     # Exactly what the transport's same-repository operations declare they need.
     permissions:
@@ -72,7 +72,7 @@ jobs:
       - name: Mint the dedicated bootstrap App identity
         id: app-token
         continue-on-error: true
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.DAILY_AMARU_APP_ID }}
           private-key: ${{ secrets.DAILY_AMARU_APP_PRIVATE_KEY }}
