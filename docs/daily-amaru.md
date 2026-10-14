@@ -136,8 +136,12 @@ The provisional transport:
 
 1. proposes only the stock Amaru lock update in
    `lambdasistemi/amaru-bootstrap`;
-2. waits for named checks on that exact candidate and resolves its full SHA
-   image tag to a lowercase registry digest;
+2. waits for named checks on that exact candidate, then resolves its full SHA
+   image tag to a lowercase registry digest; the image is pushed by a separate
+   workflow that starts when those checks finish, so the resolution waits for
+   the tag up to `DAILY_AMARU_IMAGE_WAIT_SECONDS` (default 600) at
+   `DAILY_AMARU_IMAGE_POLL_SECONDS` (default 15) and fails with the registry's
+   own answer when the window is spent;
 3. atomically repins every discovered `cardano_amaru` producer reference;
 4. requires the named workflow/job results on the exact consumer head and
    retains the positive, non-zero output from

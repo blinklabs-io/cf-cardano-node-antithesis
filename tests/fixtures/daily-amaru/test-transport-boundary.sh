@@ -1813,6 +1813,56 @@ assert_consumer_identity_mutants() {
   printf 'CONSUMER-IDENTITY-MUTANTS rejected=5\n'
 }
 
+# The producer image is published by a separate workflow that starts when the
+# candidate's CI completes, so the registry can lag the check observation by the
+# time the publisher needs to build and push. The transport must wait for the
+# tag inside a bounded window, and must still fail, naming the registry's own
+# answer, once the window is spent.
+assert_image_publish_lag() {
+  local rc attempts image_ref
+  image_ref="ghcr.io/lambdasistemi/amaru-bootstrap-producer:$upstream_sha@sha256:$(printf '%064d' 0)"
+
+  prepare_case image-publish-lag
+  : >"$case_root/docker-inspections"
+  rc=0
+  DAILY_AMARU_STATE_DIR="$state" \
+    DAILY_AMARU_BOUNDARY_DOCKER_COUNTER="$case_root/docker-inspections" \
+    DAILY_AMARU_BOUNDARY_DOCKER_MISSING_POLLS=3 \
+    DAILY_AMARU_IMAGE_WAIT_SECONDS=10 \
+    DAILY_AMARU_IMAGE_POLL_SECONDS=1 \
+    run_boundary_command "$bin" "$transport" resolve-image "$upstream_sha" \
+    >"$stdout" 2>"$stderr" || rc=$?
+  [ "$rc" -eq 0 ] ||
+    fail "resolve-image gave up on a tag published after 3 missed inspections: $(tr '\n' ' ' <"$stderr")"
+  printf '%s\n' "$image_ref" >"$case_root/expected"
+  cmp -s "$case_root/expected" "$stdout" ||
+    fail "resolve-image emitted non-exact bytes after the tag appeared: $(tr '\n' ' ' <"$stdout")"
+  attempts=$(wc -l <"$case_root/docker-inspections")
+  [ "$attempts" -eq 4 ] ||
+    fail "resolve-image inspected $attempts times, expected 3 misses and 1 hit"
+
+  # Control: a tag that never appears is refused once the window is spent, with
+  # the registry's own answer, after a bounded number of inspections.
+  prepare_case image-never-published
+  : >"$case_root/docker-inspections"
+  rc=0
+  DAILY_AMARU_STATE_DIR="$state" \
+    DAILY_AMARU_BOUNDARY_DOCKER_COUNTER="$case_root/docker-inspections" \
+    DAILY_AMARU_BOUNDARY_DOCKER_MISSING_POLLS=1000 \
+    DAILY_AMARU_IMAGE_WAIT_SECONDS=2 \
+    DAILY_AMARU_IMAGE_POLL_SECONDS=1 \
+    run_boundary_command "$bin" "$transport" resolve-image "$upstream_sha" \
+    >"$stdout" 2>"$stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail 'resolve-image accepted a tag that never appeared'
+  [ ! -s "$stdout" ] || fail 'resolve-image emitted a reference for a tag that never appeared'
+  grep -Fq ': not found' "$stderr" ||
+    fail "resolve-image refusal did not carry the registry answer: $(tr '\n' ' ' <"$stderr")"
+  attempts=$(wc -l <"$case_root/docker-inspections")
+  [ "$attempts" -eq 3 ] ||
+    fail "resolve-image inspected $attempts times inside a 2 second window at 1 second cadence, expected 3"
+  printf 'IMAGE-PUBLISH-LAG waited=true bounded=true\n'
+}
+
 case "$scenario" in
   pollution)
     assert_pollution_closed
@@ -1862,6 +1912,7 @@ case "$scenario" in
     assert_guard_diagnostics
     assert_unchanged_head_no_op
     assert_atomic_peer_snapshot
+    assert_image_publish_lag
     # shellcheck disable=SC1091
     . "$fixture_root/check-observation.sh"
     run_check_observation_proof
@@ -1908,6 +1959,9 @@ case "$scenario" in
     ;;
   atomic-resolver-fail)
     assert_named_resolver_failure network
+    ;;
+  image-publish-lag)
+    assert_image_publish_lag
     ;;
   atomic-peer-snapshot)
     assert_atomic_peer_snapshot

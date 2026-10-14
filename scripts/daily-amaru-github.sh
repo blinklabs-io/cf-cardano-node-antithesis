@@ -1047,11 +1047,26 @@ case "$operation" in
     ;;
 
   resolve-image)
-    require_commands docker tr
+    require_commands docker tr sleep
     candidate=${1:?bootstrap candidate is required}
     image_tag="$producer_image:$candidate"
-    digest=$(docker buildx imagetools inspect "$image_tag" \
-      --format '{{json .Manifest.Digest}}' | tr -d '"')
+    # The producer image is pushed by a separate workflow that starts when the
+    # candidate's CI completes, so the tag can appear after the check
+    # observation returns (2026-10-14: 14 s after CI, 50 s before the push).
+    # Wait for it inside a bounded window; the last registry answer is the
+    # failure when the window is spent.
+    image_wait=${DAILY_AMARU_IMAGE_WAIT_SECONDS:-600}
+    image_poll=${DAILY_AMARU_IMAGE_POLL_SECONDS:-15}
+    [[ "$image_wait" =~ ^[0-9]+$ ]] || die "image wait window is unusable: $image_wait"
+    [[ "$image_poll" =~ ^[1-9][0-9]*$ ]] || die "image poll cadence is unusable: $image_poll"
+    waited=0
+    until digest=$(docker buildx imagetools inspect "$image_tag" \
+      --format '{{json .Manifest.Digest}}' | tr -d '"'); do
+      [ "$waited" -lt "$image_wait" ] ||
+        die "image not published after ${waited}s: $image_tag"
+      sleep "$image_poll"
+      waited=$((waited + image_poll))
+    done
     [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || die "invalid registry digest: $digest"
     emit "$image_tag@$digest"
     ;;
