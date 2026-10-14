@@ -142,7 +142,11 @@ The provisional transport:
    the tag up to `DAILY_AMARU_IMAGE_WAIT_SECONDS` (default 600) at
    `DAILY_AMARU_IMAGE_POLL_SECONDS` (default 15) and fails with the registry's
    own answer when the window is spent;
-3. atomically repins every discovered `cardano_amaru` producer reference;
+3. atomically repins every discovered `cardano_amaru` producer reference; when
+   the consumer `main` already pins that exact image there is nothing to
+   commit, so the transport reports `CURRENT <main-sha>`, opens no branch or
+   pull request, and the controller skips steps 4 and 5 and launches against
+   that `main` head after the same producer-image census;
 4. requires the named workflow/job results on the exact consumer head and
    retains the positive, non-zero output from
    `scripts/check-amaru-producer-image-refs.sh`;

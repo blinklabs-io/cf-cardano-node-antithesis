@@ -1098,6 +1098,11 @@ case "$operation" in
       scripts/check-amaru-producer-image-refs.sh
     )
     printf '%s\n' "$checker_output" >&2
+    if git -C "$directory" diff --quiet; then
+      # main already pins this exact image: nothing to commit, push or open.
+      emit "CURRENT $(git -C "$directory" rev-parse HEAD)"
+      exit 0
+    fi
     git -C "$directory" add -- "${producer_files[@]#"$directory/"}"
     git -C "$directory" -c user.name='daily-amaru' \
       -c user.email='daily-amaru@users.noreply.github.com' \

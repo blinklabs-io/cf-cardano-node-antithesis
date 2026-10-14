@@ -651,6 +651,19 @@ assert_log_count 1 '^fake-launch cardano-node.yaml cardano_amaru duration=1 no-f
 assert_log_count 0 '^real-launch '
 pass changed
 
+# The consumer main already pins the resolved image: nothing is repinned, no
+# pull request is awaited, and the one launch goes out against main's head.
+run_case pin-current
+require_success
+assert_file_contains "$case_receipt" 'outcome=CHANGED'
+assert_file_contains "$case_receipt" 'check_evidence=consumer main already pins the resolved image; no repin pull request'
+assert_log_count 1 '^mutation:repin '
+assert_log_count 0 '^require-consumer-checks '
+assert_log_count 0 '^await-supervised-integration '
+assert_log_count 1 '^run-producer-check 4444444444444444444444444444444444444444$'
+assert_log_count 1 '^fake-launch cardano-node.yaml cardano_amaru duration=1 no-faults=false 4444444444444444444444444444444444444444$'
+pass pin-current
+
 run_case unchanged
 require_success
 assert_file_contains "$case_receipt" 'outcome=UNCHANGED'

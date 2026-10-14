@@ -310,52 +310,67 @@ consumer_sha=''
 if ! consumer_sha=$(transport_call prepare-consumer-repin "$image_ref"); then
   fail_stage consumer-repin preparation-failed
 fi
+pin_current=0
+if [[ "$consumer_sha" =~ ^CURRENT\ ([0-9a-f]{40})$ ]]; then
+  # The consumer main already pins this exact image: there is no repin to
+  # propose, check or await, and main itself is what gets launched.
+  pin_current=1
+  consumer_sha=${BASH_REMATCH[1]}
+fi
 [[ "$consumer_sha" =~ ^[0-9a-f]{40}$ ]] ||
   fail_stage consumer-repin malformed-candidate-sha
 receipt[consumer_candidate_sha]=$consumer_sha
-write_receipt consumer-repin PROVISIONAL
-
-checks_output=''
-if ! checks_output=$(transport_call require-consumer-checks "$consumer_sha"); then
-  fail_stage consumer-checks query-failed
+if [ "$pin_current" -eq 1 ]; then
+  write_receipt consumer-repin CURRENT
+else
+  write_receipt consumer-repin PROVISIONAL
 fi
-mapfile -t check_rows < <(printf '%s\n' "$checks_output" | sed '/^$/d')
-required_checks=(
-  'Build and push component images for cardano-node testnet|publish-images'
-  'Build and push component images for cardano-node testnet|Compose smoke test'
-  'tracer-sidecar CI|Build'
-  'tracer-sidecar CI|Run unit Tests'
-  'tracer-sidecar CI|Check code quality'
-  'Build documentation|build-docs'
-  'PR preview|preview'
-)
 
-for required in "${required_checks[@]}"; do
-  required_workflow=${required%%|*}
-  required_name=${required#*|}
-  match_count=0
-  valid_count=0
-  for row in "${check_rows[@]}"; do
-    workflow=''
-    check_name=''
-    check_head=''
-    conclusion=''
-    row_extra=''
-    IFS='|' read -r workflow check_name check_head conclusion row_extra <<<"$row"
-    [ -z "$row_extra" ] || continue
-    if [ "$workflow" = "$required_workflow" ] && [ "$check_name" = "$required_name" ]; then
-      match_count=$((match_count + 1))
-      if [ "$check_head" = "$consumer_sha" ] && [ "$conclusion" = success ]; then
-        valid_count=$((valid_count + 1))
+if [ "$pin_current" -eq 1 ]; then
+  receipt[check_evidence]="consumer main already pins the resolved image; no repin pull request"
+else
+  checks_output=''
+  if ! checks_output=$(transport_call require-consumer-checks "$consumer_sha"); then
+    fail_stage consumer-checks query-failed
+  fi
+  mapfile -t check_rows < <(printf '%s\n' "$checks_output" | sed '/^$/d')
+  required_checks=(
+    'Build and push component images for cardano-node testnet|publish-images'
+    'Build and push component images for cardano-node testnet|Compose smoke test'
+    'tracer-sidecar CI|Build'
+    'tracer-sidecar CI|Run unit Tests'
+    'tracer-sidecar CI|Check code quality'
+    'Build documentation|build-docs'
+    'PR preview|preview'
+  )
+
+  for required in "${required_checks[@]}"; do
+    required_workflow=${required%%|*}
+    required_name=${required#*|}
+    match_count=0
+    valid_count=0
+    for row in "${check_rows[@]}"; do
+      workflow=''
+      check_name=''
+      check_head=''
+      conclusion=''
+      row_extra=''
+      IFS='|' read -r workflow check_name check_head conclusion row_extra <<<"$row"
+      [ -z "$row_extra" ] || continue
+      if [ "$workflow" = "$required_workflow" ] && [ "$check_name" = "$required_name" ]; then
+        match_count=$((match_count + 1))
+        if [ "$check_head" = "$consumer_sha" ] && [ "$conclusion" = success ]; then
+          valid_count=$((valid_count + 1))
+        fi
       fi
+    done
+    if [ "$match_count" -ne 1 ] || [ "$valid_count" -ne 1 ]; then
+      fail_stage consumer-checks "invalid-${required_name// /-}"
     fi
   done
-  if [ "$match_count" -ne 1 ] || [ "$valid_count" -ne 1 ]; then
-    fail_stage consumer-checks "invalid-${required_name// /-}"
-  fi
-done
-receipt[check_evidence]="${#required_checks[@]} exact-head successful checks"
-write_receipt consumer-checks VERIFIED
+  receipt[check_evidence]="${#required_checks[@]} exact-head successful checks"
+  write_receipt consumer-checks VERIFIED
+fi
 
 producer_evidence=''
 if ! producer_evidence=$(transport_call run-producer-check "$consumer_sha"); then
@@ -373,34 +388,38 @@ receipt[producer_count]=$producer_count
 receipt[producer_evidence]=$producer_evidence
 write_receipt producer-check VERIFIED
 
-integration_output=''
-integration_rc=0
-integration_output=$(transport_call await-supervised-integration "$consumer_sha") ||
-  integration_rc=$?
-if [ "$integration_rc" -ne 0 ]; then
-  if [ "$integration_rc" -eq 75 ] &&
-    [[ "$integration_output" =~ ^AWAITING\ (https://[^[:space:]]+)$ ]]; then
-    consumer_pr_url=${BASH_REMATCH[1]}
-    awaiting_max_days=${DAILY_AMARU_AWAITING_MAX_DAYS:-3}
-    [[ "$awaiting_max_days" =~ ^[0-9]+$ ]] ||
-      fail_stage supervised-integration malformed-awaiting-max-days
-    awaiting_age=''
-    if ! awaiting_age=$(transport_call awaiting-integration-age "$observed_sha" "$day"); then
-      fail_stage supervised-integration awaiting-age-census-failed
+if [ "$pin_current" -eq 1 ]; then
+  integration_output=$consumer_sha
+else
+  integration_output=''
+  integration_rc=0
+  integration_output=$(transport_call await-supervised-integration "$consumer_sha") ||
+    integration_rc=$?
+  if [ "$integration_rc" -ne 0 ]; then
+    if [ "$integration_rc" -eq 75 ] &&
+      [[ "$integration_output" =~ ^AWAITING\ (https://[^[:space:]]+)$ ]]; then
+      consumer_pr_url=${BASH_REMATCH[1]}
+      awaiting_max_days=${DAILY_AMARU_AWAITING_MAX_DAYS:-3}
+      [[ "$awaiting_max_days" =~ ^[0-9]+$ ]] ||
+        fail_stage supervised-integration malformed-awaiting-max-days
+      awaiting_age=''
+      if ! awaiting_age=$(transport_call awaiting-integration-age "$observed_sha" "$day"); then
+        fail_stage supervised-integration awaiting-age-census-failed
+      fi
+      [[ "$awaiting_age" =~ ^[1-9][0-9]*$ ]] ||
+        fail_stage supervised-integration malformed-awaiting-age
+      if [ "$awaiting_age" -gt "$awaiting_max_days" ]; then
+        fail_stage supervised-integration "awaiting-integration-stale-${awaiting_age}-days"
+      fi
+      write_receipt complete AWAITING run_outcome=awaiting-integration
+      printf 'AWAITING %s %s %s\n' "$day" "$observed_sha" "$consumer_pr_url"
+      exit 0
     fi
-    [[ "$awaiting_age" =~ ^[1-9][0-9]*$ ]] ||
-      fail_stage supervised-integration malformed-awaiting-age
-    if [ "$awaiting_age" -gt "$awaiting_max_days" ]; then
-      fail_stage supervised-integration "awaiting-integration-stale-${awaiting_age}-days"
+    if [ "$integration_rc" -eq 75 ]; then
+      fail_stage supervised-integration malformed-awaiting-status
     fi
-    write_receipt complete AWAITING run_outcome=awaiting-integration
-    printf 'AWAITING %s %s %s\n' "$day" "$observed_sha" "$consumer_pr_url"
-    exit 0
+    fail_stage supervised-integration not-integrated
   fi
-  if [ "$integration_rc" -eq 75 ]; then
-    fail_stage supervised-integration malformed-awaiting-status
-  fi
-  fail_stage supervised-integration not-integrated
 fi
 integrated_sha=$integration_output
 [[ "$integrated_sha" =~ ^[0-9a-f]{40}$ ]] ||

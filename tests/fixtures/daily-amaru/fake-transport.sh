@@ -261,7 +261,11 @@ case "$operation" in
     day=${DAILY_AMARU_DAY:?DAILY_AMARU_DAY is required}
     log mutation:repin "$image"
     log observed-day prepare-consumer-repin "$day"
-    printf '%s\n' "$consumer_sha"
+    if [ "$scenario" = pin-current ]; then
+      printf 'CURRENT %s\n' "$integrated_sha"
+    else
+      printf '%s\n' "$consumer_sha"
+    fi
     ;;
 
   require-consumer-checks)
