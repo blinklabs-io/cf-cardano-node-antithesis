@@ -398,6 +398,11 @@ production_job_untouched() {
   ensure_history_commit "$repository" "$base_commit" || return 1
   git -C "$repository" show \
     "$base_commit:.github/workflows/daily-amaru.yaml" >"$base_workflow" || return 1
+  # The base is read as it stood before the 2026-10-14 runtime bump: the
+  # app-token action moved to its Node 24 major and the runner label to a pinned
+  # image. Any other difference in the production job still fails.
+  sed -i -e 's#actions/create-github-app-token@v1#actions/create-github-app-token@v3#' \
+    -e 's#runs-on: ubuntu-latest#runs-on: ubuntu-24.04#' "$base_workflow" || return 1
   cmp -s \
     <(workflow_job "$file" daily-amaru-scheduled) \
     <(workflow_job "$base_workflow" daily-amaru-scheduled)
@@ -874,7 +879,7 @@ pass broken-preconditions-no-business-effects
 # literal workflow text; expanding them here would defeat the assertion.
 # shellcheck disable=SC2016
 for literal in \
-  'uses: actions/create-github-app-token@v1' \
+  'uses: actions/create-github-app-token@v3' \
   'app-id: ${{ vars.DAILY_AMARU_APP_ID }}' \
   'private-key: ${{ secrets.DAILY_AMARU_APP_PRIVATE_KEY }}' \
   'owner: lambdasistemi' \
@@ -936,7 +941,7 @@ consumer_identity_contract_holds() {
   local workflow_file=$1 transport_file=$2 body
   # The workflow still mints exactly one App token (bootstrap) and carries no
   # consumer token of its own; its job token stays the repository identity.
-  [ "$(grep -Fc 'uses: actions/create-github-app-token@v1' "$workflow_file")" -eq 1 ] || return 1
+  [ "$(grep -Fc 'uses: actions/create-github-app-token@v3' "$workflow_file")" -eq 1 ] || return 1
   # shellcheck disable=SC2016
   [ "$(grep -Fc 'GH_TOKEN: ${{ github.token }}' "$workflow_file")" -eq 1 ] || return 1
   ! grep -Fq 'CONSUMER' "$workflow_file" || return 1
@@ -1797,6 +1802,14 @@ issue_223_declared_mutants=(
 )
 issue_225_allowed_paths=(
   .github/workflows/daily-amaru.yaml
+  .github/workflows/tracer-sidecar-CI.yaml
+  .github/workflows/smoke-test.yaml
+  .github/workflows/publish-images.yaml
+  .github/workflows/pr-preview.yaml
+  .github/workflows/deploy-docs.yaml
+  .github/workflows/daily-cardano-node-head.yaml
+  .github/workflows/cardano-node.yaml
+  .github/workflows/build-docs.yaml
   docs/daily-amaru.md
   scripts/daily-amaru-github.sh
   scripts/daily-amaru.sh

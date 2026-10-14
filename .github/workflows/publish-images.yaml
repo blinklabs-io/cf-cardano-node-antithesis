@@ -17,7 +17,7 @@ concurrency:
 jobs:
   check-image-provenance:
     name: Check image provenance (daemon-free)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
@@ -33,7 +33,7 @@ jobs:
 
   publish-images:
     needs: check-image-provenance
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # required permissions to be able to push to registry
     permissions:
@@ -68,7 +68,7 @@ jobs:
 
   smoke-test:
     name: Compose smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: publish-images
     timeout-minutes: 25
     steps:
