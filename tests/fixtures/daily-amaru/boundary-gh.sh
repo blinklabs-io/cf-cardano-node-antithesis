@@ -162,6 +162,12 @@ case "${1:-} ${2:-}" in
     ;;
 
   'workflow run')
+    # The real dispatch API takes a branch or tag, never a commit sha:
+    # run 38771921047 failed with this exact refusal.
+    if [ "$#" -ge 7 ] && [[ "$7" =~ ^[0-9a-f]{40}$ ]]; then
+      printf "could not create workflow dispatch event: HTTP 422: No ref found for: %s (https://api.github.com/repos/example/actions/workflows/1/dispatches)\n" "$7" >&2
+      exit 1
+    fi
     [ "$#" -eq 13 ] && [ "$3" = cardano-node.yaml ] && [ "$4" = -R ] &&
       [ "$6" = --ref ] && [ "$8" = -f ] && [ "$9" = test=cardano_amaru ] &&
       [ "${10}" = -f ] && [ "${11}" = duration=1 ] && [ "${12}" = -f ] &&
