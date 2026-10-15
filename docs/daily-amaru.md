@@ -114,7 +114,7 @@ any cross-repository mutation. Duplicate days, attempted SHAs, malformed or
 ambiguous observations, and every failed stage retain an honest `FAILED`
 receipt.
 
-An open consumer repin is the one expected non-launch outcome on the changed
+A repin still open at the integration read is the one expected non-launch outcome on the changed
 path. It records `stage=complete`, `outcome=AWAITING`, and
 `run_outcome=awaiting-integration`, exits zero, and prints
 `AWAITING <day> <upstream-sha> <consumer-pr-url>`. This classification applies
@@ -150,10 +150,14 @@ The provisional transport:
 4. requires the named workflow/job results on the exact consumer head and
    retains the positive, non-zero output from
    `scripts/check-amaru-producer-image-refs.sh`;
-5. checks lane-supervised guarded integration once; an open PR records the
-   bounded AWAITING outcome, while a merged PR must have the verified candidate
-   head and be exact current `main`—the transport has no generated-PR
-   self-merge command;
+5. merges the repin pull request itself, at exactly the head whose checks and
+   producer-image census were verified (`merge-verified-repin`, a merge commit
+   with the verified head as the match condition, using the consumer App
+   identity); a moved head, a closed pull request or an API refusal fails the
+   run at `stage=consumer-merge` and nothing is launched. It then reads the
+   integration once: a merged PR must have the verified candidate head and be
+   exact current `main`, and a PR still open at that read records the bounded
+   AWAITING outcome;
 6. invokes `cardano-node.yaml` once with `test=cardano_amaru`, `duration=1`,
    and `no-faults=false`, then waits for the run result before recording the
    upstream SHA as successful.

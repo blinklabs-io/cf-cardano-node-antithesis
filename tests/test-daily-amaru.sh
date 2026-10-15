@@ -80,6 +80,17 @@ assert_no_mutation() {
   assert_log_count 0 '^mutation:'
 }
 
+# The first log line matching $1 must precede the first matching $2.
+assert_log_order() {
+  local first second first_line second_line
+  first=$1
+  second=$2
+  first_line=$(grep -n -m1 -- "$first" "$case_log" | cut -d: -f1 || true)
+  second_line=$(grep -n -m1 -- "$second" "$case_log" | cut -d: -f1 || true)
+  [ -n "$first_line" ] && [ -n "$second_line" ] && [ "$first_line" -lt "$second_line" ] ||
+    fail "scenario=$case_name expected $first before $second"
+}
+
 assert_honest_failure_receipt() {
   local stage=$1
   assert_file_contains "$case_receipt" "stage=$stage"
@@ -312,7 +323,8 @@ transport_branch() {
 bootstrap_boundary_operations=(propose-bootstrap require-bootstrap-checks)
 repository_boundary_operations=(
   claim-day last-success-sha awaiting-integration-age claim-sha-attempt claim-launch
-  prepare-consumer-repin require-consumer-checks await-supervised-integration
+  prepare-consumer-repin require-consumer-checks merge-verified-repin
+  await-supervised-integration
   real-launch receipt
 )
 
@@ -647,6 +659,14 @@ assert_file_contains "$case_receipt" 'upstream_sha=11111111111111111111111111111
 assert_log_count 1 '^preflight'
 assert_log_count 1 '^resolve-upstream '
 assert_log_count 1 '^claim-sha-attempt '
+# The repin is merged once, at the verified head, after the checks and the
+# producer-image census and before the integration read and the launch.
+assert_log_count 1 '^merge-verified-repin 3333333333333333333333333333333333333333$'
+assert_log_order '^require-consumer-checks ' '^merge-verified-repin '
+assert_log_order '^run-producer-check ' '^merge-verified-repin '
+assert_log_order '^merge-verified-repin ' '^await-supervised-integration '
+assert_log_order '^merge-verified-repin ' '^fake-launch '
+assert_file_contains "$case_receipt" 'consumer_candidate_sha=3333333333333333333333333333333333333333'
 assert_log_count 1 '^fake-launch cardano-node.yaml cardano_amaru duration=1 no-faults=false 4444444444444444444444444444444444444444$'
 assert_log_count 0 '^real-launch '
 pass changed
@@ -660,6 +680,7 @@ assert_file_contains "$case_receipt" 'check_evidence=consumer main already pins 
 assert_log_count 1 '^mutation:repin '
 assert_log_count 0 '^require-consumer-checks '
 assert_log_count 0 '^await-supervised-integration '
+assert_log_count 0 '^merge-verified-repin '
 assert_log_count 1 '^run-producer-check 4444444444444444444444444444444444444444$'
 assert_log_count 1 '^fake-launch cardano-node.yaml cardano_amaru duration=1 no-faults=false 4444444444444444444444444444444444444444$'
 pass pin-current
@@ -769,6 +790,7 @@ done
 for check_case in missing-check wrong-head-check ambiguous-check pending-check failed-check; do
   run_case "$check_case"
   require_failure
+  assert_log_count 0 '^merge-verified-repin '
   assert_log_count 0 '^await-supervised-integration '
   assert_no_launch
   assert_honest_failure_receipt consumer-checks
@@ -777,6 +799,7 @@ done
 
 run_case '#202-failure'
 require_failure
+assert_log_count 0 '^merge-verified-repin '
 assert_log_count 0 '^await-supervised-integration '
 assert_no_launch
 assert_honest_failure_receipt producer-check
@@ -784,10 +807,22 @@ pass '#202-failure'
 
 run_case '#202-zero'
 require_failure
+assert_log_count 0 '^merge-verified-repin '
 assert_log_count 0 '^await-supervised-integration '
 assert_no_launch
 assert_honest_failure_receipt producer-check
 pass '#202-zero'
+
+# A refused merge (moved head, closed PR, API error) stops the run before any
+# integration read or launch, and says so in its own stage.
+run_case merge-refused
+require_failure
+assert_log_count 1 '^merge-verified-repin '
+assert_log_count 0 '^await-supervised-integration '
+assert_no_launch
+assert_honest_failure_receipt consumer-merge
+assert_file_contains "$case_receipt" 'error=merge-failed'
+pass merge-refused
 
 run_case duplicate-same-day
 require_failure
@@ -857,9 +892,10 @@ assert_file_contains "$case_receipt" 'launch_no_faults=false'
 assert_file_contains "$case_receipt" 'dependency_census=OK: 15 scheduled dependencies present: gh git jq rg sed awk grep tail tr head seq sleep date docker nix'
 pass complete-fake-launch-once
 
+assert_log_count 1 '^merge-verified-repin '
 assert_log_count 1 '^await-supervised-integration '
-assert_log_count 0 'merge'
-pass supervised-no-self-merge
+assert_log_order '^merge-verified-repin ' '^await-supervised-integration '
+pass controller-merges-verified-repin
 
 for observation in malformed-observation wrong-origin-observation wrong-ref-observation; do
   run_case "$observation"
@@ -879,7 +915,7 @@ for broken_log in "${scheduled_effect_logs[@]}"; do
 done
 for broken_log in "$tool_control_log" "$identity_control_log"; do
   for pattern in '^claim-sha-attempt ' '^mutation:' \
-    '^await-supervised-integration ' '^fake-launch ' '^real-launch '; do
+    '^merge-verified-repin ' '^await-supervised-integration ' '^fake-launch ' '^real-launch '; do
     actual=$(count_matches "$broken_log" "$pattern")
     [ "$actual" -eq 0 ] ||
       fail "broken precondition reached $actual effects matching $pattern"
@@ -961,7 +997,7 @@ consumer_identity_contract_holds() {
   # The transport mints at use, from the App credentials, for this repository
   # alone and with exactly the three permissions consumer writes need.
   # shellcheck disable=SC2016
-  [ "$(grep -Fc 'consumer_identity=$(mint_consumer_identity)' "$transport_file")" -eq 1 ] || return 1
+  [ "$(grep -Fc 'consumer_identity=$(mint_consumer_identity)' "$transport_file")" -eq 2 ] || return 1
   [ "$(grep -Fc '"repositories":["%s"]' "$transport_file")" -eq 1 ] || return 1
   # shellcheck disable=SC2016
   [ "$(grep -Fc '"permissions":{"contents":"write","pull_requests":"write","metadata":"read"}' "$transport_file")" -eq 1 ] || return 1
@@ -969,6 +1005,12 @@ consumer_identity_contract_holds() {
   body=$(transport_branch "$transport_file" prepare-consumer-repin)
   [ -n "$body" ] || return 1
   [ "$(grep -Fc 'consumer_identity' <<<"$body")" -eq 5 ] || return 1
+  ! grep -q 'repository_identity\|bootstrap_identity\|GH_TOKEN' <<<"$body" || return 1
+  # The merge of the generated repin is the other consumer write: it mints its
+  # own identity and touches no other token.
+  body=$(transport_branch "$transport_file" merge-verified-repin)
+  [ -n "$body" ] || return 1
+  [ "$(grep -Fc 'consumer_identity' <<<"$body")" -eq 4 ] || return 1
   ! grep -q 'repository_identity\|bootstrap_identity\|GH_TOKEN' <<<"$body" || return 1
   return 0
 }
@@ -989,6 +1031,12 @@ reject_mutant consumer-repository-token.sh "$transport" \
   's#push_branch "$directory" "$branch" "$consumer_identity"#push_branch "$directory" "$branch" "$repository_identity"#' \
   'push_branch "$directory" "$branch" "$repository_identity"' \
   'the repository token reaching the consumer push' \
+  consumer_identity_contract_holds_transport
+# shellcheck disable=SC2016
+reject_mutant consumer-merge-repository-token.sh "$transport" \
+  's#with_identity "$consumer_identity" gh pr merge#with_identity "$repository_identity" gh pr merge#' \
+  'with_identity "$repository_identity" gh pr merge' \
+  'the repository token reaching the repin merge' \
   consumer_identity_contract_holds_transport
 # shellcheck disable=SC2016
 reject_mutant consumer-workflow-token.yaml "$workflow" \

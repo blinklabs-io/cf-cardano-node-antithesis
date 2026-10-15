@@ -1110,7 +1110,7 @@ case "$operation" in
     push_branch "$directory" "$branch" "$consumer_identity"
     pr_url=$(create_or_find_pr "$repository" "$branch" \
       'chore: repin Amaru producer to exact digest' \
-      "Daily Amaru controller repin to $image_ref. Integration is lane-supervised." \
+      "Daily Amaru controller repin to $image_ref. The controller merges it after the exact-head checks pass." \
       "$consumer_identity")
     printf '%s\n' "$pr_url" >"$state_dir/consumer-pr"
     emit "$(git -C "$directory" rev-parse HEAD)"
@@ -1141,12 +1141,43 @@ case "$operation" in
     emit "$producer_evidence"
     ;;
 
+  merge-verified-repin)
+    # repository-token-permissions: contents=write pull-requests=write
+    require_commands gh jq openssl curl
+    candidate=${1:?consumer candidate is required}
+    [[ "$candidate" =~ ^[0-9a-f]{40}$ ]] ||
+      die "invalid consumer candidate: $candidate"
+    [ -s "$state_dir/consumer-pr" ] || die 'no consumer repin pull request to merge'
+    read -r pr_url <"$state_dir/consumer-pr"
+    consumer_identity=$(mint_consumer_identity) || die 'consumer identity mint failed'
+    [ -n "$consumer_identity" ] || die 'consumer identity is empty'
+    pr_json=$(with_identity "$consumer_identity" gh pr view "$pr_url" -R "$repository" \
+      --json state,headRefOid,mergeCommit) || die 'consumer repin pull request unreadable'
+    state=$(jq -r .state <<<"$pr_json")
+    head=$(jq -r .headRefOid <<<"$pr_json")
+    [ "$head" = "$candidate" ] ||
+      die 'consumer repin head differs from the verified candidate'
+    case "$state" in
+      OPEN)
+        # Exactly the head whose checks were observed: GitHub refuses the merge
+        # if the branch has moved since, so no unobserved commit can land.
+        with_identity "$consumer_identity" gh pr merge "$pr_url" -R "$repository" \
+          --merge --match-head-commit "$candidate" ||
+          die 'consumer repin merge failed'
+        ;;
+      MERGED) ;;
+      *) die "consumer repin pull request is not mergeable: $state" ;;
+    esac
+    emit "MERGED $pr_url"
+    ;;
+
   await-supervised-integration)
     # repository-token-permissions: contents=read pull-requests=read
     require_commands gh jq
     candidate=${1:?consumer candidate is required}
-    # TODO(cardano-node-antithesis#207): replace lane-supervised integration
-    # and launch correlation after the guarded unattended platform exists.
+    # The controller merges its own verified repin (merge-verified-repin) before
+    # this read, so a merged PR is the normal case; an open PR here means the
+    # merge was not visible yet and is reported as AWAITING.
     read -r pr_url <"$state_dir/consumer-pr"
     pr_json=$(with_identity "$repository_identity" gh pr view "$pr_url" -R "$repository" \
       --json state,headRefOid,mergeCommit)
