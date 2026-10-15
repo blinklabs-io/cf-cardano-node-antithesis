@@ -660,6 +660,11 @@ execute_value_operation() {
       arguments=("$candidate")
       expected="OK: 1 producer-image reference(s), all pinned to ghcr.io/lambdasistemi/amaru-bootstrap-producer:old@sha256:$(printf '%064d' 0)"
       ;;
+    merge-verified-repin)
+      printf 'https://example.invalid/pull/1\n' >"$state/consumer-pr"
+      arguments=("$workflow_head")
+      expected='MERGED https://example.invalid/pull/1'
+      ;;
     await-supervised-integration)
       printf 'https://example.invalid/pull/1\n' >"$state/consumer-pr"
       arguments=("$workflow_head")
@@ -708,7 +713,7 @@ assert_value_census() {
   local -a dispatched_operations executed_operations
   for operation in preflight claim-day resolve-upstream last-success-sha \
     awaiting-integration-age claim-sha-attempt claim-launch propose-bootstrap require-bootstrap-checks \
-    resolve-image prepare-consumer-repin require-consumer-checks run-producer-check \
+    resolve-image prepare-consumer-repin require-consumer-checks run-producer-check merge-verified-repin \
     await-supervised-integration fake-launch real-launch; do
     execute_value_operation "$operation"
   done
@@ -1840,6 +1845,103 @@ assert_consumer_pin_current() {
   printf 'CONSUMER-PIN-CURRENT current=reported no-branch no-pr stale=repinned\n'
 }
 
+# The controller merges its own verified repin. The merge is bound to the head
+# whose checks were observed and uses the freshly minted consumer identity; a
+# different head, a closed pull request or a refusal from the API must leave the
+# pull request unmerged and say why.
+merge_repin_run() {
+  local label=$1 pr_state=$2 pr_head=$3 refuse=${4:-}
+  prepare_case "merge-repin-$label"
+  identity_log="$case_root/identity"
+  openssl_log="$case_root/openssl"
+  curl_log="$case_root/curl"
+  : >"$identity_log"
+  : >"$openssl_log"
+  : >"$curl_log"
+  printf 'https://example.invalid/pull/1\n' >"$state/consumer-pr"
+  merge_rc=0
+  DAILY_AMARU_APP_ID="$consumer_test_app" \
+    DAILY_AMARU_APP_PRIVATE_KEY="$consumer_test_key" \
+    DAILY_AMARU_BOUNDARY_EXPECTED_KEY="$consumer_test_key" \
+    DAILY_AMARU_BOUNDARY_OPENSSL_LOG="$openssl_log" \
+    DAILY_AMARU_BOUNDARY_CURL_LOG="$curl_log" \
+    DAILY_AMARU_BOUNDARY_MINT_COUNTER="$case_root/mint-counter" \
+    GH_TOKEN=boundary-repository-token \
+    DAILY_AMARU_STATE_DIR="$state" \
+    DAILY_AMARU_BOUNDARY_GH_LOG="$effects" \
+    DAILY_AMARU_BOUNDARY_IDENTITY_LOG="$identity_log" \
+    DAILY_AMARU_BOUNDARY_COMMENTS="$comments" \
+    DAILY_AMARU_BOUNDARY_PR_STATE="$pr_state" \
+    DAILY_AMARU_BOUNDARY_PR_HEAD_SHA="$pr_head" \
+    DAILY_AMARU_BOUNDARY_MERGE_REFUSE="$refuse" \
+    run_boundary_command "$bin" "$transport" merge-verified-repin "$workflow_head" \
+    >"$stdout" 2>"$stderr" || merge_rc=$?
+}
+
+assert_merge_verified_repin() {
+  local merges
+  : "${consumer_test_key:?}"
+
+  merge_repin_run open OPEN "$workflow_head"
+  [ "$merge_rc" -eq 0 ] ||
+    fail "merge of the verified repin failed: $(tr '\n' ' ' <"$stderr")"
+  merges=$(grep -c '^gh pr merge ' "$effects" || true)
+  [ "$merges" -eq 1 ] || fail "expected exactly one merge, found $merges"
+  grep -Fq -- "--merge --match-head-commit $workflow_head" "$effects" ||
+    fail 'the merge was not a merge commit bound to the verified head'
+  grep -Fqx 'pr merge token=boundary-consumer-token-1' "$identity_log" ||
+    fail "the merge did not use the freshly minted consumer identity: $(tr '\n' ' ' <"$identity_log")"
+  ! grep -Fq 'boundary-repository-token' "$identity_log" ||
+    fail 'the repository token reached the merge'
+  [ "$(<"$stdout")" = 'MERGED https://example.invalid/pull/1' ] ||
+    fail 'the merge did not report the merged pull request'
+
+  # Control: a pull request already merged at the verified head is not merged
+  # twice; the later integration read still judges it.
+  merge_repin_run already-merged MERGED "$workflow_head"
+  [ "$merge_rc" -eq 0 ] || fail 'an already merged verified repin failed'
+  ! grep -Fq 'gh pr merge' "$effects" || fail 'an already merged repin was merged again'
+
+  # Refusals: nothing is merged and the reason is named.
+  merge_repin_run moved-head OPEN "$foreign_sha"
+  [ "$merge_rc" -ne 0 ] || fail 'a repin whose head moved was merged'
+  grep -Fq 'consumer repin head differs from the verified candidate' "$stderr" ||
+    fail 'a moved head was refused without its own diagnostic'
+  ! grep -Fq 'gh pr merge' "$effects" || fail 'a moved head still reached the merge'
+
+  merge_repin_run closed CLOSED "$workflow_head"
+  [ "$merge_rc" -ne 0 ] || fail 'a closed repin was merged'
+  grep -Fq 'is not mergeable: CLOSED' "$stderr" ||
+    fail 'a closed repin was refused without its own diagnostic'
+  ! grep -Fq 'gh pr merge' "$effects" || fail 'a closed repin still reached the merge'
+
+  merge_repin_run api-refusal OPEN "$workflow_head" 1
+  [ "$merge_rc" -ne 0 ] || fail 'a merge the API refused was reported as done'
+  grep -Fq 'consumer repin merge failed' "$stderr" ||
+    fail 'an API refusal was not named'
+  [ -z "$(<"$stdout")" ] || fail 'a refused merge emitted a benign value'
+  printf 'MERGE-VERIFIED-REPIN merged=1 already-merged=skipped moved-head=refused closed=refused api-refusal=refused\n'
+}
+
+# shellcheck disable=SC2016
+assert_merge_verified_repin_mutants() {
+  local mutant="$tmp_root/merge-match-head.sh"
+  sed 's/ --match-head-commit "\$candidate"//;' "$transport" >"$mutant"
+  ! cmp -s "$transport" "$mutant" || fail 'merge head-binding mutation did not apply'
+  chmod +x "$mutant"
+  reject_scenario_mutant merge-match-head "$mutant" merge-verified-repin \
+    'merge of the verified repin failed'
+
+  mutant="$tmp_root/merge-head-check.sh"
+  sed '/^    \[ "\$head" = "\$candidate" \] ||$/,/^      die .consumer repin head differs from the verified candidate.$/d' \
+    "$transport" >"$mutant"
+  ! cmp -s "$transport" "$mutant" || fail 'merge head-check mutation did not apply'
+  chmod +x "$mutant"
+  reject_scenario_mutant merge-head-check "$mutant" merge-verified-repin \
+    'a repin whose head moved was merged'
+  printf 'MERGE-VERIFIED-REPIN-MUTANTS head_binding_removed=rejected head_check_removed=rejected\n'
+}
+
 # CURRENT hands the launch to whatever head the clone saw, so the launcher's own
 # comparison with the live main is the only thing tying the inspected head to
 # the launched one. A main that has moved since must refuse before any dispatch;
@@ -1958,6 +2060,9 @@ case "$scenario" in
   real-launch-main-moved)
     assert_real_launch_main_moved
     ;;
+  merge-verified-repin)
+    assert_merge_verified_repin
+    ;;
   consumer-identity)
     assert_consumer_identity
     ;;
@@ -1998,6 +2103,8 @@ case "$scenario" in
     assert_consumer_pin_current
     assert_real_launch_main_moved
     assert_real_launch_main_guard_mutant
+    assert_merge_verified_repin
+    assert_merge_verified_repin_mutants
     # shellcheck disable=SC1091
     . "$fixture_root/check-observation.sh"
     run_check_observation_proof

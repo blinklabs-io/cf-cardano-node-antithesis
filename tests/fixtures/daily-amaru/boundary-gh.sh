@@ -22,7 +22,7 @@ if [ "${GH_TOKEN:-}" = boundary-expired-token ]; then
 fi
 if [ -n "${DAILY_AMARU_BOUNDARY_IDENTITY_LOG:-}" ]; then
   case "${1:-} ${2:-}" in
-    "repo clone" | "pr create")
+    "repo clone" | "pr create" | "pr merge")
       printf "%s %s token=%s\n" "$1" "$2" "${GH_TOKEN:-}" >>"$DAILY_AMARU_BOUNDARY_IDENTITY_LOG"
       ;;
   esac
@@ -86,6 +86,17 @@ case "${1:-} ${2:-}" in
     else
       exit 64
     fi
+    ;;
+
+  'pr merge')
+    # Only the real shape: a merge commit, bound to the verified head.
+    [ "$#" -eq 8 ] && [ "$4" = -R ] && [ "$6" = --merge ] &&
+      [ "$7" = --match-head-commit ] && [[ "$8" =~ ^[0-9a-f]{40}$ ]] || exit 64
+    if [ -n "${DAILY_AMARU_BOUNDARY_MERGE_REFUSE:-}" ]; then
+      printf 'boundary-gh: pull request is not mergeable\n' >&2
+      exit 1
+    fi
+    printf 'boundary-gh merge diagnostic\n'
     ;;
 
   'issue comment')

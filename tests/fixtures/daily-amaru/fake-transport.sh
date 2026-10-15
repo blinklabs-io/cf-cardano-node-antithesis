@@ -315,6 +315,18 @@ case "$operation" in
     esac
     ;;
 
+  merge-verified-repin)
+    head=${1:?consumer head is required}
+    log merge-verified-repin "$head"
+    case "$scenario" in
+      merge-refused)
+        printf 'daily-amaru-github: consumer repin merge failed\n' >&2
+        exit 1
+        ;;
+    esac
+    printf 'MERGED https://example.invalid/pull/17\n'
+    ;;
+
   await-supervised-integration)
     head=${1:?consumer head is required}
     log await-supervised-integration "$head"

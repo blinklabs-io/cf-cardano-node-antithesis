@@ -391,6 +391,12 @@ write_receipt producer-check VERIFIED
 if [ "$pin_current" -eq 1 ]; then
   integration_output=$consumer_sha
 else
+  # The exact head whose checks and census were just verified is merged by the
+  # controller itself; a refusal (moved head, closed PR, API error) stops here.
+  if ! transport_call merge-verified-repin "$consumer_sha" >/dev/null; then
+    fail_stage consumer-merge merge-failed
+  fi
+  write_receipt consumer-merge MERGED
   integration_output=''
   integration_rc=0
   integration_output=$(transport_call await-supervised-integration "$consumer_sha") ||
