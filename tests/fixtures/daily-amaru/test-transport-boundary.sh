@@ -1626,6 +1626,7 @@ assert_atomic_peer_snapshot() {
 # shellcheck disable=SC2016
 consumer_identity_run() {
   local label=$1 app_key=$2 rc=0
+  local pinned_ref=${3:-"ghcr.io/lambdasistemi/amaru-bootstrap-producer:$upstream_sha@sha256:$(printf '%064d' 0)"}
   local remote hook_bash
   remote=$(create_consumer_remote "$label")
   prepare_case "$label"
@@ -1660,7 +1661,7 @@ consumer_identity_run() {
     DAILY_AMARU_BOUNDARY_COMMENTS="$comments" \
     DAILY_AMARU_BOUNDARY_REPOSITORY_REMOTE="$remote" \
     run_boundary_command "$bin" "$transport" prepare-consumer-repin \
-    "ghcr.io/lambdasistemi/amaru-bootstrap-producer:$upstream_sha@sha256:$(printf '%064d' 0)" \
+    "$pinned_ref" \
     >"$stdout" 2>"$stderr" || rc=$?
   for kv in ${consumer_extra_env[@]+"${consumer_extra_env[@]}"}; do
     unset "${kv%%=*}"
@@ -1813,6 +1814,81 @@ assert_consumer_identity_mutants() {
   printf 'CONSUMER-IDENTITY-MUTANTS rejected=5\n'
 }
 
+# A repin whose image the consumer main already pins has nothing to commit: the
+# transport reports the pin as current at main's exact head, and neither pushes
+# a branch nor opens a pull request.
+# shellcheck disable=SC2016
+assert_consumer_pin_current() {
+  local current_ref main_sha
+  current_ref="ghcr.io/lambdasistemi/amaru-bootstrap-producer:old@sha256:$(printf '%064d' 0)"
+  consumer_extra_env=()
+  consumer_identity_run consumer-pin-current "$consumer_test_key" "$current_ref"
+  [ "$consumer_identity_rc" -eq 0 ] ||
+    fail "repin of an already pinned image failed: $(tr '\n' ' ' <"$stderr")"
+  main_sha=$(git --git-dir="$consumer_identity_remote" rev-parse refs/heads/main)
+  printf 'CURRENT %s\n' "$main_sha" >"$case_root/expected"
+  cmp -s "$case_root/expected" "$stdout" ||
+    fail "already pinned repin did not report CURRENT <main head>: $(tr '\n' ' ' <"$stdout")"
+  ! assert_consumer_branch || fail 'already pinned repin pushed a consumer branch'
+  ! grep -Fq 'pr create' "$effects" || fail 'already pinned repin opened a pull request'
+
+  # Control: a different image is still repinned through a branch and a PR.
+  consumer_identity_run consumer-pin-stale "$consumer_test_key"
+  [ "$consumer_identity_rc" -eq 0 ] || fail 'a stale pin repin failed'
+  assert_consumer_branch || fail 'a stale pin was not repinned through a branch'
+  grep -Fq 'pr create' "$effects" || fail 'a stale pin opened no pull request'
+  printf 'CONSUMER-PIN-CURRENT current=reported no-branch no-pr stale=repinned\n'
+}
+
+# CURRENT hands the launch to whatever head the clone saw, so the launcher's own
+# comparison with the live main is the only thing tying the inspected head to
+# the launched one. A main that has moved since must refuse before any dispatch;
+# an unmoved main must still dispatch (the control).
+assert_real_launch_main_moved() {
+  local rc=0 moved_main=3333333333333333333333333333333333333333
+  local integrated=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  local label main_sha
+  for label in moved current; do
+    prepare_case "real-launch-main-$label"
+    main_sha=$integrated
+    [ "$label" = moved ] && main_sha=$moved_main
+    rc=0
+    DAILY_AMARU_IDENTITY=boundary-bootstrap-token GH_TOKEN=boundary-repository-token \
+      DAILY_AMARU_STATE_DIR="$state" DAILY_AMARU_BOUNDARY_GH_LOG="$effects" \
+      DAILY_AMARU_BOUNDARY_COMMENTS="$comments" \
+      DAILY_AMARU_BOUNDARY_INTEGRATED_SHA=$integrated \
+      DAILY_AMARU_BOUNDARY_MAIN_SHA="$main_sha" \
+      run_boundary_command "$bin" "$transport" real-launch \
+      cardano-node.yaml cardano_amaru duration=1 no-faults=false "$integrated" \
+      >"$stdout" 2>"$stderr" || rc=$?
+    if [ "$label" = moved ]; then
+      [ "$rc" -ne 0 ] || fail 'real launch accepted a main that moved after the inspection'
+      grep -Fq 'real launch target is not exact main' "$stderr" ||
+        fail "moved-main refusal lacked its own diagnostic: $(tr '\n' ' ' <"$stderr")"
+      ! grep -Fq 'workflow run' "$effects" ||
+        fail 'a refused real launch still dispatched the workflow'
+    else
+      [ "$rc" -eq 0 ] ||
+        fail "real launch against the current main failed: $(tr '\n' ' ' <"$stderr")"
+      grep -Fq 'workflow run' "$effects" ||
+        fail 'real launch against the current main did not dispatch'
+    fi
+  done
+  printf 'REAL-LAUNCH-MAIN moved=refused current=dispatched\n'
+}
+
+# shellcheck disable=SC2016
+assert_real_launch_main_guard_mutant() {
+  local mutant="$tmp_root/real-launch-main-guard.sh"
+  sed 's/^    \[ "\$main_head" = "\$integrated" \] || die .real launch target is not exact main.$/    true/' \
+    "$transport" >"$mutant"
+  ! cmp -s "$transport" "$mutant" || fail 'real-launch guard mutation did not apply'
+  chmod +x "$mutant"
+  reject_scenario_mutant real-launch-main-guard "$mutant" real-launch-main-moved \
+    'real launch accepted a main that moved after the inspection'
+  printf 'REAL-LAUNCH-MAIN-MUTANT guard_removed=rejected\n'
+}
+
 # The producer image is published by a separate workflow that starts when the
 # candidate's CI completes, so the registry can lag the check observation by the
 # time the publisher needs to build and push. The transport must wait for the
@@ -1876,6 +1952,12 @@ case "$scenario" in
   fresh)
     assert_fresh
     ;;
+  consumer-pin-current)
+    assert_consumer_pin_current
+    ;;
+  real-launch-main-moved)
+    assert_real_launch_main_moved
+    ;;
   consumer-identity)
     assert_consumer_identity
     ;;
@@ -1913,6 +1995,9 @@ case "$scenario" in
     assert_unchanged_head_no_op
     assert_atomic_peer_snapshot
     assert_image_publish_lag
+    assert_consumer_pin_current
+    assert_real_launch_main_moved
+    assert_real_launch_main_guard_mutant
     # shellcheck disable=SC1091
     . "$fixture_root/check-observation.sh"
     run_check_observation_proof
