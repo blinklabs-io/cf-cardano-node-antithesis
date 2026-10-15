@@ -1244,7 +1244,7 @@ case "$operation" in
     [ "$main_head" = "$integrated" ] || die 'real launch target is not exact main'
     started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     with_identity "$repository_identity" gh workflow run cardano-node.yaml -R "$repository" \
-      --ref "$integrated" -f test=cardano_amaru -f duration=1 -f no-faults=false
+      --ref main -f test=cardano_amaru -f duration=1 -f no-faults=false
     run_id=''
     for _ in $(seq 1 30); do
       run_id=$(with_identity "$repository_identity" gh run list -R "$repository" \

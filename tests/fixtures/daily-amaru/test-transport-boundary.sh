@@ -2070,6 +2070,8 @@ assert_real_launch_main_moved() {
         fail "real launch against the current main failed: $(tr '\n' ' ' <"$stderr")"
       grep -Fq 'workflow run' "$effects" ||
         fail 'real launch against the current main did not dispatch'
+      grep -Fq -- '--ref main' "$effects" ||
+        fail 'real launch did not dispatch on the main branch'
     fi
   done
   printf 'REAL-LAUNCH-MAIN moved=refused current=dispatched\n'
@@ -2084,7 +2086,15 @@ assert_real_launch_main_guard_mutant() {
   chmod +x "$mutant"
   reject_scenario_mutant real-launch-main-guard "$mutant" real-launch-main-moved \
     'real launch accepted a main that moved after the inspection'
-  printf 'REAL-LAUNCH-MAIN-MUTANT guard_removed=rejected\n'
+  # The dispatch ref is the branch: a commit sha is refused by the real API.
+  mutant="$tmp_root/real-launch-sha-ref.sh"
+  sed 's/^      --ref main -f test=cardano_amaru/      --ref "$integrated" -f test=cardano_amaru/' \
+    "$transport" >"$mutant"
+  ! cmp -s "$transport" "$mutant" || fail 'sha-ref mutation did not apply'
+  chmod +x "$mutant"
+  reject_scenario_mutant real-launch-sha-ref "$mutant" real-launch-main-moved \
+    'No ref found for'
+  printf 'REAL-LAUNCH-MAIN-MUTANT guard_removed=rejected sha_ref=rejected\n'
 }
 
 # The producer image is published by a separate workflow that starts when the
