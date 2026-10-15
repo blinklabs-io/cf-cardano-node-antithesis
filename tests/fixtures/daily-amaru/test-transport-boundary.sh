@@ -699,7 +699,7 @@ execute_value_operation() {
   case "$operation" in
     propose-bootstrap) expected=$(git --git-dir="$bootstrap_remote" rev-parse "refs/heads/$branch") ;;
     prepare-consumer-repin)
-      expected=$(git --git-dir="$consumer_remote" rev-parse "refs/heads/daily-amaru/consumer-$day")
+      expected=$(git --git-dir="$consumer_remote" rev-parse "refs/heads/daily-amaru/consumer-$day-${upstream_sha:0:12}")
       ;;
   esac
   printf '%s\n' "$expected" >"$case_root/expected"
@@ -1632,8 +1632,8 @@ assert_atomic_peer_snapshot() {
 consumer_identity_run() {
   local label=$1 app_key=$2 rc=0
   local pinned_ref=${3:-"ghcr.io/lambdasistemi/amaru-bootstrap-producer:$upstream_sha@sha256:$(printf '%064d' 0)"}
-  local remote hook_bash
-  remote=$(create_consumer_remote "$label")
+  local remote=${4:-} hook_bash
+  [ -n "$remote" ] || remote=$(create_consumer_remote "$label")
   prepare_case "$label"
   hook_bash=$(command -v bash)
   identity_log="$case_root/identity"
@@ -1674,9 +1674,11 @@ consumer_identity_run() {
   consumer_identity_rc=$rc
 }
 
+# Any consumer repin branch at all: the census ranges over every name the
+# transport could have used, not over one spelling of it.
 assert_consumer_branch() {
-  git --git-dir="$consumer_identity_remote" rev-parse --verify --quiet \
-    "refs/heads/daily-amaru/consumer-$day" >/dev/null
+  [ -n "$(git --git-dir="$consumer_identity_remote" for-each-ref --format='%(refname)' \
+    'refs/heads/daily-amaru/consumer-*')" ]
 }
 
 assert_consumer_no_effect() {
@@ -1843,6 +1845,100 @@ assert_consumer_pin_current() {
   assert_consumer_branch || fail 'a stale pin was not repinned through a branch'
   grep -Fq 'pr create' "$effects" || fail 'a stale pin opened no pull request'
   printf 'CONSUMER-PIN-CURRENT current=reported no-branch no-pr stale=repinned\n'
+}
+
+# The repin branch is named by day and image. A second run on the same day with
+# a different image gets its own branch and pull request; the same image again
+# adopts the branch it already pushed instead of colliding with it; a branch of
+# that name holding anything else is refused.
+# shellcheck disable=SC2016
+assert_consumer_branch_per_image() {
+  local producer=ghcr.io/lambdasistemi/amaru-bootstrap-producer
+  local image_a image_b remote work ref_a ref_b head_a head_b
+  image_a="$producer:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa@sha256:$(printf '%064d' 1)"
+  image_b="$producer:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb@sha256:$(printf '%064d' 2)"
+  ref_a="refs/heads/daily-amaru/consumer-$day-aaaaaaaaaaaa"
+  ref_b="refs/heads/daily-amaru/consumer-$day-bbbbbbbbbbbb"
+  consumer_extra_env=()
+  remote=$(create_consumer_remote consumer-per-image)
+
+  # A rerun happens later: pin distinct commit times so a transport that rebuilt
+  # its commit instead of adopting it would produce a different sha, never the
+  # same one by landing in the same second.
+  consumer_extra_env=(GIT_AUTHOR_DATE=2001-01-01T00:00:00Z GIT_COMMITTER_DATE=2001-01-01T00:00:00Z)
+  consumer_identity_run per-image-a "$consumer_test_key" "$image_a" "$remote"
+  [ "$consumer_identity_rc" -eq 0 ] ||
+    fail "first repin of the day failed: $(tr '\n' ' ' <"$stderr")"
+  head_a=$(git --git-dir="$remote" rev-parse "$ref_a") ||
+    fail 'the repin branch is not named by day and image'
+  [ "$(<"$stdout")" = "$head_a" ] || fail 'the first repin did not report its branch head'
+
+  consumer_identity_run per-image-b "$consumer_test_key" "$image_b" "$remote"
+  [ "$consumer_identity_rc" -eq 0 ] ||
+    fail "a second same-day run with a different image failed: $(tr '\n' ' ' <"$stderr")"
+  head_b=$(git --git-dir="$remote" rev-parse "$ref_b") ||
+    fail 'a different image did not get its own branch'
+  [ "$head_b" != "$head_a" ] || fail 'two images share one repin commit'
+  [ "$(git --git-dir="$remote" rev-parse "$ref_a")" = "$head_a" ] ||
+    fail 'the second image moved the first image branch'
+  [ "$(<"$stdout")" = "$head_b" ] || fail 'the second repin did not report its own head'
+  grep -Fq 'pr create' "$effects" || fail 'the second image opened no pull request'
+
+  consumer_extra_env=(GIT_AUTHOR_DATE=2002-02-02T00:00:00Z GIT_COMMITTER_DATE=2002-02-02T00:00:00Z)
+  consumer_identity_run per-image-a-again "$consumer_test_key" "$image_a" "$remote"
+  consumer_extra_env=()
+  [ "$consumer_identity_rc" -eq 0 ] ||
+    fail "the same image again was not adopted: $(tr '\n' ' ' <"$stderr")"
+  [ "$(git --git-dir="$remote" rev-parse "$ref_a")" = "$head_a" ] ||
+    fail 'the same image again rewrote its branch'
+  [ "$(<"$stdout")" = "$head_a" ] || fail 'the adopted repin did not report the existing head'
+  ! grep -q '^push ' "$identity_log" || fail 'the same image again pushed'
+
+  # A branch of that name that is not exactly this change is foreign.
+  work=$(mktemp -d "$tmp_root/per-image-foreign.XXXXXX")
+  git clone --quiet "file://$remote" "$work"
+  git -C "$work" checkout --quiet -B "daily-amaru/consumer-$day-aaaaaaaaaaaa" \
+    "origin/daily-amaru/consumer-$day-aaaaaaaaaaaa"
+  sed -i "s#@sha256:[0-9]*#@sha256:$(printf '%064d' 9)#" "$work/testnets/compose.yaml"
+  git -C "$work" -c user.name=boundary -c user.email=boundary@example.invalid \
+    commit --quiet --amend -a -m foreign
+  git -C "$work" push --quiet --force origin "HEAD:$ref_a"
+  head_a=$(git --git-dir="$remote" rev-parse "$ref_a")
+  consumer_identity_run per-image-foreign "$consumer_test_key" "$image_a" "$remote"
+  [ "$consumer_identity_rc" -ne 0 ] || fail 'a foreign branch of the repin name was adopted'
+  grep -Fq 'foreign-consumer-branch' "$stderr" ||
+    fail "a foreign branch was refused without its own diagnostic: $(tr '\n' ' ' <"$stderr")"
+  [ "$(git --git-dir="$remote" rev-parse "$ref_a")" = "$head_a" ] ||
+    fail 'a foreign branch was overwritten'
+  printf 'CONSUMER-BRANCH-PER-IMAGE new-image=own-branch same-image=adopted foreign=refused\n'
+}
+
+# shellcheck disable=SC2016
+assert_consumer_branch_mutants() {
+  local mutant
+  mutant="$tmp_root/consumer-branch-day-only.sh"
+  sed 's#branch="daily-amaru/consumer-$day-${image_tag:0:12}"#branch="daily-amaru/consumer-$day"#' \
+    "$transport" >"$mutant"
+  ! cmp -s "$transport" "$mutant" || fail 'day-only branch mutation did not apply'
+  chmod +x "$mutant"
+  reject_scenario_mutant consumer-branch-day-only "$mutant" consumer-branch-per-image \
+    'the repin branch is not named by day and image'
+
+  mutant="$tmp_root/consumer-branch-no-adopt.sh"
+  sed 's#if git -C "$directory" show-ref --verify --quiet "$remote_ref"; then#if false; then#' \
+    "$transport" >"$mutant"
+  ! cmp -s "$transport" "$mutant" || fail 'no-adoption mutation did not apply'
+  chmod +x "$mutant"
+  reject_scenario_mutant consumer-branch-no-adopt "$mutant" consumer-branch-per-image \
+    'the same image again was not adopted'
+
+  mutant="$tmp_root/consumer-branch-adopt-foreign.sh"
+  sed "s#die 'foreign-consumer-branch'#true#" "$transport" >"$mutant"
+  ! cmp -s "$transport" "$mutant" || fail 'adopt-foreign mutation did not apply'
+  chmod +x "$mutant"
+  reject_scenario_mutant consumer-branch-adopt-foreign "$mutant" consumer-branch-per-image \
+    'a foreign branch of the repin name was adopted'
+  printf 'CONSUMER-BRANCH-MUTANTS day_only=rejected no_adoption=rejected adopt_foreign=rejected\n'
 }
 
 # The controller merges its own verified repin. The merge is bound to the head
@@ -2060,6 +2156,9 @@ case "$scenario" in
   real-launch-main-moved)
     assert_real_launch_main_moved
     ;;
+  consumer-branch-per-image)
+    assert_consumer_branch_per_image
+    ;;
   merge-verified-repin)
     assert_merge_verified_repin
     ;;
@@ -2105,6 +2204,8 @@ case "$scenario" in
     assert_real_launch_main_guard_mutant
     assert_merge_verified_repin
     assert_merge_verified_repin_mutants
+    assert_consumer_branch_per_image
+    assert_consumer_branch_mutants
     # shellcheck disable=SC1091
     . "$fixture_root/check-observation.sh"
     run_check_observation_proof

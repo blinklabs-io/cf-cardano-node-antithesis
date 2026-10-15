@@ -1077,7 +1077,11 @@ case "$operation" in
     image_ref=${1:?image reference is required}
     day=${DAILY_AMARU_DAY:?DAILY_AMARU_DAY is required}
     directory=$state_dir/consumer
-    branch="daily-amaru/consumer-$day"
+    # One branch per day and image: a second run on the same day with a different
+    # image must not collide with the first run's branch.
+    image_tag=${image_ref#*:}
+    image_tag=${image_tag%%@*}
+    branch="daily-amaru/consumer-$day-${image_tag:0:12}"
 
     consumer_identity=$(mint_consumer_identity) || die 'consumer identity mint failed'
     [ -n "$consumer_identity" ] || die 'consumer identity is empty'
@@ -1103,11 +1107,29 @@ case "$operation" in
       emit "CURRENT $(git -C "$directory" rev-parse HEAD)"
       exit 0
     fi
-    git -C "$directory" add -- "${producer_files[@]#"$directory/"}"
-    git -C "$directory" -c user.name='daily-amaru' \
-      -c user.email='daily-amaru@users.noreply.github.com' \
-      commit -m "chore: repin Amaru producer to exact digest"
-    push_branch "$directory" "$branch" "$consumer_identity"
+    remote_ref="refs/remotes/origin/$branch"
+    if git -C "$directory" show-ref --verify --quiet "$remote_ref"; then
+      # A rerun of the same repin: adopt the branch only if it is exactly this
+      # change, one commit on the current main; anything else is foreign.
+      remote_files=$(git -C "$directory" diff --name-only origin/main "$remote_ref")
+      local_files=$(git -C "$directory" diff --name-only)
+      if ! {
+        [ "$(git -C "$directory" rev-list --count "origin/main..$remote_ref")" -eq 1 ] &&
+          [ "$(git -C "$directory" merge-base origin/main "$remote_ref")" = \
+            "$(git -C "$directory" rev-parse origin/main)" ] &&
+          [ -n "$local_files" ] && [ "$remote_files" = "$local_files" ] &&
+          git -C "$directory" diff --quiet "$remote_ref"
+      }; then
+        die 'foreign-consumer-branch'
+      fi
+      git -C "$directory" checkout -q -f -B "$branch" "$remote_ref"
+    else
+      git -C "$directory" add -- "${producer_files[@]#"$directory/"}"
+      git -C "$directory" -c user.name='daily-amaru' \
+        -c user.email='daily-amaru@users.noreply.github.com' \
+        commit -m "chore: repin Amaru producer to exact digest"
+      push_branch "$directory" "$branch" "$consumer_identity"
+    fi
     pr_url=$(create_or_find_pr "$repository" "$branch" \
       'chore: repin Amaru producer to exact digest' \
       "Daily Amaru controller repin to $image_ref. The controller merges it after the exact-head checks pass." \
