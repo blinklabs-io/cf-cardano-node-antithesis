@@ -39,7 +39,7 @@ jobs:
     name: Daily Amaru production run
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.production)
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 360
     # Exactly what the transport's same-repository operations declare they need.
     permissions:
       actions: write
