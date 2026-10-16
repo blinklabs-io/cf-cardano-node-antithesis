@@ -1977,6 +1977,8 @@ issue_225_allowed_paths=(
   # issue 236 — Cardano Node 11.1.3 rotation: the 11.1 cardano-cli ping surface
   scripts/smoke-test.sh
   components/Makefile
+  # wait bound: duration + 3 hours for the Antithesis result
+  tests/test-wait-bounds.sh
 )
 
 register_223_mutant() {
