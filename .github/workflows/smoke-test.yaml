@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Run smoke test
-        run: ./scripts/smoke-test.sh cardano_node_master 600
+        run: ./scripts/smoke-test.sh cardano-node-releases 600
       - name: Run smoke test (cardano_amaru)
         env:
           AMARU_BOOTSTRAP_SMOKE_TIMEOUT: "900"

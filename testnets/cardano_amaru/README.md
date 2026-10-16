@@ -1,6 +1,6 @@
 # Cardano Amaru Testnet
 
-This testnet extends the `cardano_node_master` shape with an Amaru
+This testnet extends the `cardano-node-releases` shape with an Amaru
 bootstrap path:
 
 - three `cardano-node` block producers pinned to the official

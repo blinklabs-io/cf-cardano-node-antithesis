@@ -528,6 +528,7 @@ assert_daily_complete_receipt() {
   local expected_claim_ref=$2
   local expected_duration=$3
   local expected_consumer_sha=$4
+  local expected_testnet=${5:-cardano-node-head}
   local prepared_submission=''
   prepared_submission=$(awk '
     /^stage=submit-candidate$/ { in_prepared = 1 }
@@ -542,7 +543,7 @@ assert_daily_complete_receipt() {
   assert_last_receipt_contains 'faults=enabled'
   assert_last_receipt_contains "consumer_repository=$daily_repository"
   assert_last_receipt_contains "run_base=$daily_run_base"
-  assert_last_receipt_contains "request=cardano-node.yaml|${expected_claim_ref#refs/tags/}|cardano_node_head|$expected_duration|no-faults=false"
+  assert_last_receipt_contains "request=cardano-node.yaml|${expected_claim_ref#refs/tags/}|$expected_testnet|$expected_duration|no-faults=false"
   assert_last_receipt_contains "upstream_sha=$upstream_sha"
   assert_last_receipt_contains "candidate_ref=$candidate_ref"
   assert_last_receipt_contains "binary_revision=$upstream_sha"
@@ -654,10 +655,10 @@ pass daily-prepared
 # The exact real request: 3 hours, faults on, exact consumer commit, at the
 # claim ref, in the HEAD testnet directory.
 assert_file_contains "$case_log" \
-  "submit-run $daily_consumer_sha $production_claim_ref cardano_node_head 3 false"
+  "submit-run $daily_consumer_sha $production_claim_ref cardano-node-head 3 false"
 assert_file_contains "$case_log" "await-run $daily_consumer_sha $daily_run_url"
 assert_file_contains "$case_log" \
-  "prepare-consumer $daily_day $daily_run_base daily $case_state/rendered-model $candidate_ref cardano_node_head"
+  "prepare-consumer $daily_day $daily_run_base daily $case_state/rendered-model $candidate_ref cardano-node-head"
 assert_file_contains "$case_log" "claim-day $production_claim_ref $daily_consumer_sha"
 pass request-3h-faults-exact-consumer
 
@@ -696,7 +697,7 @@ run_daily validation-prepared prepared validation "$validation_state"
 require_daily_success validation-prepared
 assert_daily_complete_receipt validation "$validation_claim_ref" 1 "$validation_consumer_sha"
 assert_file_contains "$case_log" \
-  "submit-run $validation_consumer_sha $validation_claim_ref cardano_node_head 1 false"
+  "submit-run $validation_consumer_sha $validation_claim_ref cardano-node-head 1 false"
 [ -d "$(claim_marker_path "$validation_state/state" "$validation_claim_ref")" ] ||
   fail 'validation run left no validation claim marker'
 [ ! -d "$(claim_marker_path "$validation_state/state" "$production_claim_ref")" ] ||
@@ -714,6 +715,59 @@ assert_file_contains "$case_receipt" 'stage=claim-day'
 assert_file_contains "$case_receipt" 'outcome=CLAIMED'
 assert_log_count 1 '^submit-run '
 pass validation-cannot-consume-day
+
+# --- fast profile -------------------------------------------------------------
+# The fast profile runs cardano-node-head-fast under its own claim namespace:
+# on a day the standard profile already claimed, it claims its own tag and
+# dispatches its own testnet, with the same 3 h / 1 h durations.
+fast_claim_ref="refs/tags/daily-cardano-node-head-fast/$daily_day"
+fast_validation_claim_ref="refs/tags/daily-cardano-node-head-fast/validation/$daily_day"
+fast_state=$tmp_root/fast-state
+mkdir -p "$fast_state/state"
+run_daily standard-before-fast prepared daily "$fast_state"
+require_daily_success standard-before-fast
+daily_extra_env=("HEAD_CANDIDATE_PROFILE=fast")
+run_daily fast-prepared prepared daily "$fast_state"
+daily_extra_env=()
+require_daily_success fast-prepared
+assert_daily_complete_receipt daily "$fast_claim_ref" 3 "$daily_consumer_sha" \
+  cardano-node-head-fast
+assert_file_contains "$case_log" \
+  "prepare-consumer $daily_day $daily_run_base daily $case_state/rendered-model $candidate_ref cardano-node-head-fast"
+assert_file_contains "$case_log" "claim-day $fast_claim_ref $daily_consumer_sha"
+assert_file_contains "$case_log" \
+  "submit-run $daily_consumer_sha $fast_claim_ref cardano-node-head-fast 3 false"
+[ -d "$(claim_marker_path "$fast_state/state" "$fast_claim_ref")" ] ||
+  fail 'fast run left no fast claim marker'
+[ -d "$(claim_marker_path "$fast_state/state" "$production_claim_ref")" ] ||
+  fail 'the standard claim disappeared under the fast run'
+pass fast-profile-own-testnet-and-claim
+
+daily_extra_env=("HEAD_CANDIDATE_PROFILE=fast")
+run_daily fast-duplicate prepared daily "$fast_state"
+daily_extra_env=()
+require_daily_failure fast-duplicate
+assert_last_receipt_contains 'stage=claim-day'
+assert_log_count 0 '^submit-run '
+pass fast-profile-one-claim-per-day
+
+daily_extra_env=("HEAD_CANDIDATE_PROFILE=fast")
+run_daily fast-validation prepared validation "$fast_state"
+daily_extra_env=()
+require_daily_success fast-validation
+assert_daily_complete_receipt validation "$fast_validation_claim_ref" 1 \
+  "$validation_consumer_sha" cardano-node-head-fast
+assert_file_contains "$case_log" \
+  "submit-run $validation_consumer_sha $fast_validation_claim_ref cardano-node-head-fast 1 false"
+pass fast-profile-validation
+
+daily_extra_env=("HEAD_CANDIDATE_PROFILE=turbo")
+run_daily unsupported-profile prepared daily
+daily_extra_env=()
+require_daily_failure unsupported-profile
+assert_file_contains "$case_stderr" 'daily-cardano-node-head: unsupported profile: turbo'
+[ ! -s "$case_log" ] || fail 'an unsupported profile reached the transport'
+pass unsupported-profile-refused-before-transport
 
 # --- duplicate day ----------------------------------------------------------
 duplicate_state=$tmp_root/duplicate-state

@@ -8,7 +8,7 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$repo_root"
 
 verifier=$repo_root/scripts/check-image-provenance.sh
-publisher=$repo_root/scripts/push-cardano_node_master_images.sh
+publisher=$repo_root/scripts/push-images.sh
 helper=$repo_root/components/image-meta/meta.nix
 source_url=https://github.com/cardano-foundation/cardano-node-antithesis
 epoch_fixture=$repo_root/tests/fixtures/epoch-image/image.tar.gz

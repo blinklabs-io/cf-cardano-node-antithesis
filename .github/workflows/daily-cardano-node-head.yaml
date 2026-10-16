@@ -2,8 +2,10 @@ name: Cardano Node HEAD candidate
 
 on:
   schedule:
-    # One production run per UTC day (02:23 UTC).
+    # One production run per UTC day and profile: cardano-node-head at
+    # 02:23 UTC, cardano-node-head-fast at 14:23 UTC.
     - cron: '23 2 * * *'
+    - cron: '23 14 * * *'
   workflow_dispatch:
     inputs:
       production:
@@ -15,6 +17,13 @@ on:
         description: >-
           Run the one-hour validation mode (own claim namespace; cannot
           consume a production day claim)
+        required: false
+        type: boolean
+        default: false
+      fast:
+        description: >-
+          Run the fast profile (cardano-node-head-fast, rendered from
+          cardano-node-releases-fast; own claim namespace)
         required: false
         type: boolean
         default: false
@@ -61,6 +70,9 @@ jobs:
     env:
       HEAD_CANDIDATE_IMAGE_REPOSITORY: >-
         ghcr.io/cardano-foundation/cardano-node-antithesis/cardano-node-head
+      HEAD_CANDIDATE_PROFILE: >-
+        ${{ (github.event.schedule == '23 14 * * *' || inputs.fast)
+        && 'fast' || 'standard' }}
     steps:
       - name: Check out the dispatched ref
         uses: actions/checkout@v6
@@ -118,6 +130,9 @@ jobs:
     env:
       HEAD_CANDIDATE_IMAGE_REPOSITORY: >-
         ghcr.io/cardano-foundation/cardano-node-antithesis/cardano-node-head
+      HEAD_CANDIDATE_PROFILE: >-
+        ${{ (github.event.schedule == '23 14 * * *' || inputs.fast)
+        && 'fast' || 'standard' }}
     steps:
       - name: Check out the dispatched ref
         uses: actions/checkout@v6
@@ -175,6 +190,9 @@ jobs:
     env:
       HEAD_CANDIDATE_IMAGE_REPOSITORY: >-
         ghcr.io/cardano-foundation/cardano-node-antithesis/cardano-node-head
+      HEAD_CANDIDATE_PROFILE: >-
+        ${{ (github.event.schedule == '23 14 * * *' || inputs.fast)
+        && 'fast' || 'standard' }}
     steps:
       - name: Check out the dispatched ref
         uses: actions/checkout@v6

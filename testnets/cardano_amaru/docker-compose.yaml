@@ -401,7 +401,7 @@ services:
       amaru-consumer-net:
 
   # Convergence is the tracer-sidecar fork-tree probe ('cluster fork depth < k'),
-  # aligned to cardano_node_master. The old composer tip-equality probes (and
+  # aligned to cardano-node-releases. The old composer tip-equality probes (and
   # the AMARU_RELAYS / amaru-startup wiring) were brittle and removed upstream
   # (cna#119); amaru-follows-chain is tracked separately (cna#168).
   sidecar:

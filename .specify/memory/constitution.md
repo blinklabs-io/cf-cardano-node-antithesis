@@ -5,7 +5,7 @@ Principles that govern every spec / plan / task on this repo. Derived from the r
 ## Core Principles
 
 ### I. Composer-first workload
-Every workload we put into `testnets/cardano_node_master/docker-compose.yaml` must be expressed through the Antithesis Test Composer (commands under `components/<name>/composer/<template>/`). No side-channel harness, no inline entrypoint scripts driving behavior. The seven prefixes (`first_`, `parallel_driver_`, `serial_driver_`, `singleton_driver_`, `anytime_`, `eventually_`, `finally_`) are the only sanctioned scheduling primitives.
+Every workload we put into `testnets/cardano-node-releases/docker-compose.yaml` must be expressed through the Antithesis Test Composer (commands under `components/<name>/composer/<template>/`). No side-channel harness, no inline entrypoint scripts driving behavior. The seven prefixes (`first_`, `parallel_driver_`, `serial_driver_`, `singleton_driver_`, `anytime_`, `eventually_`, `finally_`) are the only sanctioned scheduling primitives.
 
 ### II. SDK instrumentation is mandatory
 Every non-trivial composer command emits at least one Antithesis SDK assertion per meaningful control-flow moment: `reachable` on entry, `sometimes` around every success/failure branch, `always` on true invariants, `unreachable` on impossible branches. A driver that only runs a binary with zero SDK output is not acceptable — reports live and die by SDK coverage.
@@ -50,7 +50,7 @@ Every feature starts with a GitHub issue. Every issue goes through `/speckit.spe
 Each branch lives in its own worktree under `/code/cardano-node-antithesis-<slug>`. The main repo stays on `main`. Delete the worktree when the PR merges.
 
 ### Bumping an image
-When a PR modifies a component's source, the PR MUST also bump the component's tag in `testnets/cardano_node_master/docker-compose.yaml` to a commit SHA from the branch, so that `publish-images` builds and pushes the new image and Antithesis pulls the right thing.
+When a PR modifies a component's source, the PR MUST also bump the component's tag in `testnets/cardano-node-releases/docker-compose.yaml` to a commit SHA from the branch, so that `publish-images` builds and pushes the new image and Antithesis pulls the right thing.
 
 ### Verify-before-merge
 For every PR: push, wait for `publish-images` green, trigger an Antithesis duration=1h run on the branch via `gh workflow run cardano-node.yaml --ref <branch>`, compare findings against main's baseline, then merge via `mcp__merge-guard__guard-merge` with `mergeMethod: rebase`.

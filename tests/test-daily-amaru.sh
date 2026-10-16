@@ -1939,8 +1939,8 @@ issue_225_allowed_paths=(
   specs/241-nix-image-provenance/tasks.md
   tests/test-image-provenance.sh
   tests/fixtures/epoch-image/image.tar.gz
-  docs/testnets/cardano-node-master.md
-  testnets/cardano_node_master/docker-compose.yaml
+  docs/testnets/cardano-node-releases.md
+  testnets/cardano-node-releases/docker-compose.yaml
   scripts/daily-cardano-node-head.sh
   scripts/daily-cardano-node-head-github.sh
   tests/test-daily-cardano-node-head.sh
@@ -1979,6 +1979,24 @@ issue_225_allowed_paths=(
   components/Makefile
   # wait bound: duration + 3 hours for the Antithesis result
   tests/test-wait-bounds.sh
+  # cardano-node-releases rename, the -fast testnets and the HEAD profiles
+  CONTRIBUTING.md
+  docs/components/asteria-player.md
+  docs/components/tx-generator.md
+  docs/testnets/index.md
+  scripts/push-images.sh
+  .specify/memory/constitution.md
+  testnets/cardano_amaru/README.md
+  testnets/cardano_node_adversary/README.md
+  testnets/cardano-node-releases-fast/docker-compose.yaml
+  testnets/cardano-node-releases-fast/README.md
+  testnets/cardano-node-releases-fast/relay-topology.json
+  testnets/cardano-node-releases-fast/testnet.yaml
+  testnets/cardano-node-releases-fast/tracer-config.yaml
+  testnets/cardano-node-releases/README.md
+  testnets/cardano-node-releases/relay-topology.json
+  testnets/cardano-node-releases/testnet.yaml
+  testnets/cardano-node-releases/tracer-config.yaml
 )
 
 register_223_mutant() {

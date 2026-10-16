@@ -41,7 +41,23 @@ receipt[upstream_ref]=$ref
 # ---------------------------------------------------------------------------
 # Daily run identity (daily/validation modes only; #215 receipts unchanged)
 # ---------------------------------------------------------------------------
-consumer_testnet=cardano_node_head
+# The profile names the genesis the HEAD candidate runs under: standard
+# renders cardano-node-releases, fast renders cardano-node-releases-fast.
+# Each profile has its own consumer testnet and its own day-claim namespace,
+# so the two daily runs never consume each other's claim.
+profile=${HEAD_CANDIDATE_PROFILE:-standard}
+case "$profile" in
+  standard)
+    consumer_testnet=cardano-node-head
+    claim_namespace=daily-cardano-node-head
+    ;;
+  fast)
+    consumer_testnet=cardano-node-head-fast
+    claim_namespace=daily-cardano-node-head-fast
+    ;;
+  *) die "unsupported profile: $profile" ;;
+esac
+export HEAD_CANDIDATE_PROFILE=$profile
 consumer_repository=${HEAD_CANDIDATE_REPOSITORY:-${GITHUB_REPOSITORY:-cardano-foundation/cardano-node-antithesis}}
 day=''
 claim_ref=''
@@ -54,11 +70,11 @@ if [ "$mode" = daily ] || [ "$mode" = validation ]; then
   receipt[day]=$day
   case "$mode" in
     daily)
-      claim_ref="refs/tags/daily-cardano-node-head/$day"
+      claim_ref="refs/tags/$claim_namespace/$day"
       duration=3
       ;;
     validation)
-      claim_ref="refs/tags/daily-cardano-node-head/validation/$day"
+      claim_ref="refs/tags/$claim_namespace/validation/$day"
       duration=1
       ;;
   esac

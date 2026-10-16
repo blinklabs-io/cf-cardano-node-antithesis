@@ -35,7 +35,7 @@ nav:
       - Tx-generator: components/tx-generator.md
   - Testnets:
       - testnets/index.md
-      - Cardano Node Master: testnets/cardano-node-master.md
+      - Cardano Node Releases: testnets/cardano-node-releases.md
   - Daily candidates:
       - Cardano Node HEAD candidate: daily-cardano-node-head.md
       - Daily Amaru: daily-amaru.md

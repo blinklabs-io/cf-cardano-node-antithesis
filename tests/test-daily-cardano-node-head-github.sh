@@ -827,12 +827,13 @@ daily_day=2026-09-24
 daily_claim_ref="refs/tags/daily-cardano-node-head/$daily_day"
 daily_tag=daily-cardano-node-head/$daily_day
 consumer_repository=cardano-foundation/cardano-node-antithesis
-consumer_testnet=cardano_node_head
+consumer_testnet=cardano-node-head
 
 run_transport_in() {
   local state=$1
   local name=$2
   shift 2
+  case_name=$name
   case_number=$((case_number + 1))
   case_dir=$tmp_root/$case_number-$name
   mkdir -p "$case_dir" "$state"
@@ -1091,7 +1092,7 @@ pass claim-day-requires-workspace-at-commit
 # with a unique correlation value, then select exactly the marked run.
 daily_marker=daily-cardano-node-head-$daily_day-run-4242
 run_list_fixture=$scenario_root/run-list
-printf '424242|cardano_node_head [%s]\n' "$daily_marker" >"$run_list_fixture"
+printf '424242|cardano-node-head [%s]\n' "$daily_marker" >"$run_list_fixture"
 
 run_transport claim-submit-daily env \
   STUB_REAL_GIT="$real_git" \
@@ -1107,14 +1108,14 @@ assert_log_contains \
 pass submit-run-dispatches-moog-workflow-at-tag
 
 # A competing eligible run in the list is not selected: only a run whose
-# title EQUALS 'cardano_node_head [<marker>]' is chosen — a superstring
+# title EQUALS 'cardano-node-head [<marker>]' is chosen — a superstring
 # title and a same-marker title for a different testnet are both refused.
 competing_run_list=$scenario_root/run-list-competing
 {
-  printf '111111|cardano_node_master\n'
-  printf '999999|cardano_node_head [x%s]\n' "$daily_marker"
-  printf '888888|cardano_node_master [%s]\n' "$daily_marker"
-  printf '424243|cardano_node_head [%s]\n' "$daily_marker"
+  printf '111111|cardano-node-releases\n'
+  printf '999999|cardano-node-head [x%s]\n' "$daily_marker"
+  printf '888888|cardano-node-releases [%s]\n' "$daily_marker"
+  printf '424243|cardano-node-head [%s]\n' "$daily_marker"
 } >"$competing_run_list"
 run_transport submit-run-selects-by-marker env \
   STUB_REAL_GIT="$real_git" \
@@ -1129,7 +1130,7 @@ pass submit-run-selects-exactly-its-run
 
 # A superstring title alone is not selected: exact equality or refusal.
 superstring_run_list=$scenario_root/run-list-superstring
-printf '999999|cardano_node_head [x%s]\n' "$daily_marker" >"$superstring_run_list"
+printf '999999|cardano-node-head [x%s]\n' "$daily_marker" >"$superstring_run_list"
 run_transport submit-run-refuses-superstring env \
   STUB_REAL_GIT="$real_git" \
   STUB_RUN_LIST_FILE="$superstring_run_list" \
@@ -1145,8 +1146,8 @@ pass submit-run-refuses-superstring-title
 # Two runs carrying the marker: ambiguous, refuses.
 ambiguous_run_list=$scenario_root/run-list-ambiguous
 {
-  printf '424242|cardano_node_head [%s]\n' "$daily_marker"
-  printf '424243|cardano_node_head [%s]\n' "$daily_marker"
+  printf '424242|cardano-node-head [%s]\n' "$daily_marker"
+  printf '424243|cardano-node-head [%s]\n' "$daily_marker"
 } >"$ambiguous_run_list"
 run_transport submit-run-ambiguous env \
   STUB_REAL_GIT="$real_git" \
@@ -1162,7 +1163,7 @@ pass submit-run-refuses-ambiguous-selection
 
 # No run carrying the marker: not identifiable, refuses.
 unmatched_run_list=$scenario_root/run-list-unmatched
-printf '111111|cardano_node_master\n' >"$unmatched_run_list"
+printf '111111|cardano-node-releases\n' >"$unmatched_run_list"
 run_transport submit-run-unidentifiable env \
   STUB_REAL_GIT="$real_git" \
   STUB_RUN_LIST_FILE="$unmatched_run_list" \
@@ -1227,10 +1228,109 @@ run_transport submit-testnet-rejected env \
   STUB_RUN_LIST_FILE="$run_list_fixture" \
   HEAD_CANDIDATE_CORRELATION="$daily_marker" \
   "$transport" submit-run "$consumer_commit" "$daily_claim_ref" \
-  cardano_node_master 3 false
+  cardano-node-releases 3 false
 require_failure
 assert_stderr_token 'submit target is not the HEAD testnet'
 pass submit-run-rejects-foreign-testnet
+
+# ---------------------------------------------------------------------------
+# profiles: standard renders cardano-node-releases into cardano-node-head,
+# fast renders cardano-node-releases-fast into cardano-node-head-fast, each
+# under its own claim namespace. The source models here are the repository's
+# own, so the render proves which genesis each profile carries.
+# ---------------------------------------------------------------------------
+run_transport render-standard-profile env \
+  "$transport" render-topology "$candidate_ref"
+require_success
+grep -Fqx 'epochLength: 86400' "$case_state/testnet.yaml" ||
+  fail 'standard profile did not render the cardano-node-releases genesis'
+[ "$(grep -Fc -- "image: $candidate_ref" "$case_state/docker-compose.yaml")" -eq 7 ] ||
+  fail 'standard profile render does not pin the candidate on every node'
+pass standard-profile-renders-releases-model
+
+run_transport render-fast-profile env \
+  HEAD_CANDIDATE_PROFILE=fast \
+  "$transport" render-topology "$candidate_ref"
+require_success
+grep -Fqx 'epochLength: 1000' "$case_state/testnet.yaml" ||
+  fail 'fast profile did not render the cardano-node-releases-fast genesis'
+grep -Fq 'SECURITY_PARAM: "20"' "$case_state/docker-compose.yaml" ||
+  fail 'fast profile render lost the tracer-sidecar security parameter'
+[ "$(grep -Fc -- "image: $candidate_ref" "$case_state/docker-compose.yaml")" -eq 7 ] ||
+  fail 'fast profile render does not pin the candidate on every node'
+pass fast-profile-renders-releases-fast-model
+
+fast_claim_ref="refs/tags/daily-cardano-node-head-fast/$daily_day"
+fast_marker=daily-cardano-node-head-fast-$daily_day-run-4343
+fast_run_list=$scenario_root/fast-run-list
+{
+  printf '424242|cardano-node-head [%s]\n' "$fast_marker"
+  printf '434343|cardano-node-head-fast [%s]\n' "$fast_marker"
+} >"$fast_run_list"
+run_transport submit-fast-profile env \
+  STUB_REAL_GIT="$real_git" \
+  STUB_RUN_LIST_FILE="$fast_run_list" \
+  HEAD_CANDIDATE_PROFILE=fast \
+  HEAD_CANDIDATE_CORRELATION="$fast_marker" \
+  "$transport" submit-run "$consumer_commit" "$fast_claim_ref" \
+  cardano-node-head-fast 3 false
+require_success
+assert_stdout_line \
+  "https://github.com/$consumer_repository/actions/runs/434343"
+assert_log_contains \
+  "gh workflow run cardano-node.yaml -R $consumer_repository --ref ${fast_claim_ref#refs/tags/} -f test=cardano-node-head-fast -f duration=3 -f no-faults=false -f correlation=$fast_marker"
+pass fast-profile-submits-its-own-testnet
+
+run_transport submit-fast-profile-standard-testnet env \
+  STUB_REAL_GIT="$real_git" \
+  STUB_RUN_LIST_FILE="$fast_run_list" \
+  HEAD_CANDIDATE_PROFILE=fast \
+  HEAD_CANDIDATE_CORRELATION="$fast_marker" \
+  "$transport" submit-run "$consumer_commit" "$fast_claim_ref" \
+  cardano-node-head 3 false
+require_failure
+assert_stderr_token 'submit target is not the HEAD testnet'
+run_transport submit-standard-profile-fast-testnet env \
+  STUB_REAL_GIT="$real_git" \
+  STUB_RUN_LIST_FILE="$fast_run_list" \
+  HEAD_CANDIDATE_CORRELATION="$fast_marker" \
+  "$transport" submit-run "$consumer_commit" "$daily_claim_ref" \
+  cardano-node-head-fast 3 false
+require_failure
+assert_stderr_token 'submit target is not the HEAD testnet'
+pass profiles-refuse-each-others-testnet
+
+run_transport prepare-fast-profile-standard-testnet env \
+  STUB_REAL_GIT="$real_git" \
+  HEAD_CANDIDATE_PROFILE=fast \
+  "$transport" prepare-consumer "$daily_day" "$stub_main_sha" daily \
+  "$prepare_state/docker-compose.yaml" "$candidate_ref" cardano-node-head
+require_failure
+assert_stderr_token 'consumer directory is not the HEAD testnet'
+pass fast-profile-refuses-standard-consumer-directory
+
+run_transport_in "$claim_fail_state" claim-fast-profile-standard-ref env \
+  STUB_REAL_GIT="$real_git" \
+  STUB_LSREMOTE_FILE="$claim_fail_fixture" \
+  HEAD_CANDIDATE_PROFILE=fast \
+  "$transport" claim-day "$daily_claim_ref" "$fail_commit"
+require_failure
+assert_stderr_token 'claim ref is not a day tag of profile fast'
+run_transport_in "$claim_fail_state" claim-standard-profile-fast-ref env \
+  STUB_REAL_GIT="$real_git" \
+  STUB_LSREMOTE_FILE="$claim_fail_fixture" \
+  "$transport" claim-day "$fast_claim_ref" "$fail_commit"
+require_failure
+assert_stderr_token 'claim ref is not a day tag of profile standard'
+pass profiles-refuse-each-others-claim-namespace
+
+run_transport unsupported-profile env \
+  HEAD_CANDIDATE_PROFILE=turbo \
+  "$transport" render-topology "$candidate_ref"
+require_failure
+assert_stderr_token 'unsupported profile: turbo'
+assert_stdout_empty
+pass transport-refuses-unsupported-profile
 
 # await-run: read the MOOG correlation the dispatched run exposed.
 correlation_fixture=$scenario_root/moog-correlation
@@ -1313,6 +1413,32 @@ grep -Eq "github.event_name == 'workflow_dispatch' && inputs.validation" "$daily
 grep -Fq '!inputs.production && !inputs.validation' "$daily_workflow" ||
   fail 'the #215 manual candidate path lost its dispatch routing'
 pass workflow-manual-candidate-path-preserved
+
+# The fast profile has its own daily schedule and dispatch input, and every
+# job that runs the controller passes the profile chosen from them.
+fast_cron="'23 14 * * *'"
+grep -Fq -- "- cron: $fast_cron" "$daily_workflow" ||
+  fail 'daily workflow lacks the fast-profile schedule'
+grep -Eq '^[[:space:]]+fast:' "$daily_workflow" ||
+  fail 'daily workflow lacks the fast dispatch input'
+job_sets_profile() {
+  awk -v job="$2" -v cron="$3" '
+    $0 == "  " job ":" { injob = 1; next }
+    injob && /^  [A-Za-z0-9_-]+:$/ { exit }
+    injob && /HEAD_CANDIDATE_PROFILE:/ { inprofile = 1; next }
+    inprofile && index($0, "github.event.schedule == " cron) && index($0, "inputs.fast") { found = 1 }
+    inprofile && /^      [A-Za-z0-9_]+:/ { inprofile = 0 }
+    END { exit found ? 0 : 1 }
+  ' "$1"
+}
+for controller_job in head-candidate daily-head-run validation-head-run; do
+  job_sets_profile "$daily_workflow" "$controller_job" "$fast_cron" ||
+    fail "job $controller_job does not pass the fast/standard profile"
+done
+if job_sets_profile "$daily_workflow" candidate-tests "$fast_cron"; then
+  fail 'the hermetic PR job leaks a profile into the suites'
+fi
+pass workflow-fast-profile-wired
 
 # Every job that runs the daily/validation controller must grant the token
 # the real dispatch needs — the exact value actions: write, not merely the
@@ -1479,11 +1605,11 @@ empty_census=$tmp_root/census-empty.json
 printf '[]\n' >"$empty_census"
 occupied_census=$tmp_root/census-occupied.json
 {
-  printf '[{"key":{"type":"test-run","commitId":"%s","directory":"testnets/cardano_node_head","platform":"github","repository":{"organization":"cardano-foundation","repo":"cardano-node-antithesis"},"requester":"stub-requester"}}]\n' "$consumer_commit"
+  printf '[{"key":{"type":"test-run","commitId":"%s","directory":"testnets/cardano-node-head","platform":"github","repository":{"organization":"cardano-foundation","repo":"cardano-node-antithesis"},"requester":"stub-requester"}}]\n' "$consumer_commit"
 } >"$occupied_census"
 matrix_occupied_census=$tmp_root/census-matrix-occupied.json
 {
-  printf '[{"key":{"type":"test-run","commitId":"%s","directory":"testnets/cardano_node_master","platform":"github","repository":{"organization":"cardano-foundation","repo":"cardano-node-antithesis"},"requester":"stub-requester"}},{"key":{"type":"test-run","commitId":"%s","directory":"testnets/cardano_node_master","platform":"github","repository":{"organization":"cardano-foundation","repo":"cardano-node-antithesis"},"requester":"stub-requester"}}]\n' "$consumer_commit" "$consumer_commit"
+  printf '[{"key":{"type":"test-run","commitId":"%s","directory":"testnets/cardano-node-releases","platform":"github","repository":{"organization":"cardano-foundation","repo":"cardano-node-antithesis"},"requester":"stub-requester"}},{"key":{"type":"test-run","commitId":"%s","directory":"testnets/cardano-node-releases","platform":"github","repository":{"organization":"cardano-foundation","repo":"cardano-node-antithesis"},"requester":"stub-requester"}}]\n' "$consumer_commit" "$consumer_commit"
 } >"$matrix_occupied_census"
 
 
@@ -1499,11 +1625,11 @@ assert_no_create_test() {
 
 # A non-first workflow attempt is refused before anything else.
 rerun_rc=0
-run_submit_step cardano_node_head 2 "$tmp_root/rerun-output" "$empty_census" \
+run_submit_step cardano-node-head 2 "$tmp_root/rerun-output" "$empty_census" \
   >"$tmp_root/rerun-stdout" 2>"$tmp_root/rerun-stderr" || rerun_rc=$?
 [ "$rerun_rc" -ne 0 ] ||
   fail 'a re-run of the daily HEAD test was not refused'
-grep -Fq 'daily-head-rerun-refused: testnet=cardano_node_head attempt=2' \
+grep -Fq 'daily-head-rerun-refused: testnet=cardano-node-head attempt=2' \
   "$tmp_root/rerun-stderr" ||
   fail 'the rerun refusal lacks its stable reason token'
 assert_no_create_test "$moog_stub_log"
@@ -1512,7 +1638,7 @@ pass moog-step-refuses-daily-head-rerun
 # Matrix testnets are untouched by every daily HEAD guard.
 matrix_touches_before=$(grep -Ec '^git (push|ls-remote)' "$stub_log" || true)
 matrix_rc=0
-run_submit_step cardano_node_master 2 "$tmp_root/matrix-output" "$empty_census" \
+run_submit_step cardano-node-releases 2 "$tmp_root/matrix-output" "$empty_census" \
   >"$tmp_root/matrix-stdout" 2>"$tmp_root/matrix-stderr" || matrix_rc=$?
 [ "$matrix_rc" -eq 0 ] ||
   fail "a matrix testnet re-run was refused: $(cat "$tmp_root/matrix-stderr")"
@@ -1527,7 +1653,7 @@ pass moog-step-matrix-rerun-unchanged
 
 # First fresh dispatch: empty census, submits.
 first_rc=0
-run_submit_step cardano_node_head 1 "$tmp_root/first-output" "$empty_census" \
+run_submit_step cardano-node-head 1 "$tmp_root/first-output" "$empty_census" \
   >"$tmp_root/first-stdout" 2>"$tmp_root/first-stderr" || first_rc=$?
 [ "$first_rc" -eq 0 ] ||
   fail "the first fresh daily HEAD dispatch was refused: $(cat "$tmp_root/first-stderr")"
@@ -1540,15 +1666,47 @@ pass moog-step-first-fresh-dispatch-submits
 # A second sequential dispatch at the same consumer commit: the read-only
 # MOOG census finds an existing test-run and refuses before create-test.
 census_rc=0
-run_submit_step cardano_node_head 1 "$tmp_root/census-output" "$occupied_census" \
+run_submit_step cardano-node-head 1 "$tmp_root/census-output" "$occupied_census" \
   >"$tmp_root/census-stdout" 2>"$tmp_root/census-stderr" || census_rc=$?
 [ "$census_rc" -ne 0 ] ||
   fail 'a census-occupied fresh dispatch was not refused'
-grep -Fq 'daily-head-already-submitted: testnet=cardano_node_head existing=1' \
+grep -Fq 'daily-head-already-submitted: testnet=cardano-node-head existing=1' \
   "$tmp_root/census-stderr" ||
   fail 'the census refusal lacks its stable reason token'
 assert_no_create_test "$moog_stub_log"
 pass moog-step-second-sequential-dispatch-refused
+
+# The fast HEAD testnet carries the same one-attempt-per-day guards; the fast
+# releases testnet, like releases, is a matrix testnet and re-runs freely.
+fast_rerun_rc=0
+run_submit_step cardano-node-head-fast 2 "$tmp_root/fast-rerun-output" "$empty_census" \
+  >"$tmp_root/fast-rerun-stdout" 2>"$tmp_root/fast-rerun-stderr" || fast_rerun_rc=$?
+[ "$fast_rerun_rc" -ne 0 ] ||
+  fail 'a re-run of the fast daily HEAD test was not refused'
+grep -Fq 'daily-head-rerun-refused: testnet=cardano-node-head-fast attempt=2' \
+  "$tmp_root/fast-rerun-stderr" ||
+  fail 'the fast rerun refusal lacks its stable reason token'
+assert_no_create_test "$moog_stub_log"
+fast_occupied_census=$tmp_root/census-fast-occupied.json
+printf '[{"key":{"type":"test-run","commitId":"%s","directory":"testnets/cardano-node-head-fast","platform":"github","repository":{"organization":"cardano-foundation","repo":"cardano-node-antithesis"},"requester":"stub-requester"}}]\n' \
+  "$consumer_commit" >"$fast_occupied_census"
+fast_census_rc=0
+run_submit_step cardano-node-head-fast 1 "$tmp_root/fast-census-output" "$fast_occupied_census" \
+  >"$tmp_root/fast-census-stdout" 2>"$tmp_root/fast-census-stderr" || fast_census_rc=$?
+[ "$fast_census_rc" -ne 0 ] ||
+  fail 'a census-occupied fast HEAD dispatch was not refused'
+grep -Fq 'daily-head-already-submitted: testnet=cardano-node-head-fast existing=1' \
+  "$tmp_root/fast-census-stderr" ||
+  fail 'the fast census refusal lacks its stable reason token'
+assert_no_create_test "$moog_stub_log"
+releases_fast_rc=0
+run_submit_step cardano-node-releases-fast 2 "$tmp_root/releases-fast-output" "$empty_census" \
+  >"$tmp_root/releases-fast-stdout" 2>"$tmp_root/releases-fast-stderr" || releases_fast_rc=$?
+[ "$releases_fast_rc" -eq 0 ] ||
+  fail "a releases-fast re-run was refused: $(cat "$tmp_root/releases-fast-stderr")"
+grep -Fq 'requester create-test' "$moog_stub_log" ||
+  fail 'the releases-fast re-run did not construct its MOOG request'
+pass moog-step-fast-head-guarded-releases-fast-free
 
 # An unreadable census refuses the daily HEAD testnet before create-test.
 : >"$empty_census.lsremote"
@@ -1568,13 +1726,13 @@ env -i \
   GITHUB_REPOSITORY="$consumer_repository" \
   GITHUB_OUTPUT="$tmp_root/census-fail-output" \
   DURATION=3 \
-  TESTNET=cardano_node_head \
+  TESTNET=cardano-node-head \
   RUN_ATTEMPT=1 \
   bash "$submit_step_script" >"$tmp_root/census-fail-stdout" 2>"$tmp_root/census-fail-stderr" ||
   census_fail_rc=$?
 [ "$census_fail_rc" -ne 0 ] ||
   fail 'an unreadable census did not refuse the daily HEAD dispatch'
-grep -Fq 'daily-head-census-unreadable: testnet=cardano_node_head' \
+grep -Fq 'daily-head-census-unreadable: testnet=cardano-node-head' \
   "$tmp_root/census-fail-stderr" ||
   fail 'the unreadable-census refusal lacks its stable reason token'
 assert_no_create_test "$tmp_root/census-fail.moglog"
@@ -1583,13 +1741,13 @@ pass moog-step-unreadable-census-refuses
 # Matrix testnets keep today's behaviour: an occupied census only feeds the
 # try counter, never a refusal.
 matrix_occupied_rc=0
-run_submit_step cardano_node_master 1 "$tmp_root/matrix-occupied-output" \
+run_submit_step cardano-node-releases 1 "$tmp_root/matrix-occupied-output" \
   "$matrix_occupied_census" \
   >"$tmp_root/matrix-occupied-stdout" 2>"$tmp_root/matrix-occupied-stderr" ||
   matrix_occupied_rc=$?
 [ "$matrix_occupied_rc" -eq 0 ] ||
   fail "a matrix dispatch with occupied census was refused: $(cat "$tmp_root/matrix-occupied-stderr")"
-grep -Fq 'TRY=3 for testnets/cardano_node_master' "$tmp_root/matrix-occupied-stdout" ||
+grep -Fq 'TRY=3 for testnets/cardano-node-releases' "$tmp_root/matrix-occupied-stdout" ||
   fail 'the occupied matrix census did not advance the try counter'
 grep -Fq 'requester create-test' "$moog_stub_log" ||
   fail 'the matrix dispatch with occupied census did not construct its request'
