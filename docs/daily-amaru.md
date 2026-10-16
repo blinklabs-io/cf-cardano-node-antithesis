@@ -88,7 +88,7 @@ running ones. `require-consumer-checks` therefore observes the exact candidate
 head until every required check is uniquely successful, polling every
 `DAILY_AMARU_CONSUMER_CHECK_POLL_SECONDS` (default 30) up to an absolute
 ceiling `DAILY_AMARU_CONSUMER_CHECK_MAX_SECONDS` (default 2700; with the 7200
-second bootstrap ceiling this fits the 360 minute job, which also holds the launched run's duration + 3 hour wait). Absence and pending
+second bootstrap ceiling this fits the 360 minute job). Absence and pending
 states are waited out; a terminal non-success, a skipped required job, a
 duplicate success, a run awaiting approval (`action_required`) or a transport
 error fails at once, and rows for any other head never count. At the ceiling the
