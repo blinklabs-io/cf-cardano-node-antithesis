@@ -46,6 +46,7 @@ step_bound_seconds() {
   local command bound
   command=$(step_run "$node_workflow" 'Wait for results')
   [ -n "$command" ] || fail 'Wait for results step not found'
+  # shellcheck disable=SC2016
   bound=$(sed -n 's/^timeout \(\$((.*))\) .*/\1/p' <<<"$command")
   [ -n "$bound" ] || fail "no arithmetic timeout bound in: $command"
   DURATION=$1 bash -c "echo $bound"
