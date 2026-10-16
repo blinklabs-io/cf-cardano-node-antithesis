@@ -2,7 +2,7 @@
 
 The HEAD candidate path answers one operator question: does the
 **latest `cardano-node` `master` HEAD executable** run as a Docker cluster in
-this repository's `cardano_node_master` testnet, with every producer and relay
+this repository's `cardano-node-releases` testnet, with every producer and relay
 on that one image? One controller, `scripts/daily-cardano-node-head.sh`, runs
 the path; every external effect (upstream observation, image build,
 publication, revision proof, Compose) lives in one transport,
@@ -32,7 +32,7 @@ just head-candidate-local
 starts a throwaway registry (`registry:2` on `localhost:5000`), builds the
 exact-rev upstream Nix `dockerImage/node`, publishes it as
 `localhost:5000/cardano-node-head:<sha>`, proves the revision, renders the
-`cardano_node_master` model into the state directory with every producer and
+`cardano-node-releases` model into the state directory with every producer and
 relay set to the candidate, validates the model through Compose, and writes
 the receipt. The state directory defaults to
 `${RUNNER_TEMP:-/tmp}/daily-cardano-node-head`; set
@@ -55,7 +55,8 @@ The workflow **Cardano Node HEAD candidate**
 (`.github/workflows/daily-cardano-node-head.yaml`) covers three hosted
 entrypoints:
 
-- **schedule** — once per UTC day at 02:23, the production daily run below;
+- **schedule** — once per UTC day and profile (02:23 standard, 14:23 fast),
+  the production daily run below;
 - **workflow_dispatch → production** — the manual recovery entrypoint for the
   same production daily run (see *Recovery* below);
 - **workflow_dispatch with no inputs** — the #215 manual candidate preparation
@@ -69,6 +70,22 @@ requests run only the hermetic candidate suites.
 Because the tag is the full upstream SHA, re-running the manual candidate
 preparation is idempotent for an unchanged `master`.
 
+## Profiles
+
+`HEAD_CANDIDATE_PROFILE` selects which genesis the candidate runs under. Each
+profile has its own source model, consumer testnet and day-claim namespace,
+so the two daily runs never consume each other's claim:
+
+| profile | source model | consumer testnet | claim tags | schedule |
+|---|---|---|---|---|
+| `standard` (default) | `cardano-node-releases` | `cardano-node-head` | `daily-cardano-node-head/…` | 02:23 UTC |
+| `fast` | `cardano-node-releases-fast` | `cardano-node-head-fast` | `daily-cardano-node-head-fast/…` | 14:23 UTC |
+
+The workflow picks `fast` for the 14:23 schedule or when dispatched with
+`fast: true`, and `standard` otherwise. The fast genesis (500 s epochs) is
+described in [cardano-node-releases](testnets/cardano-node-releases.md#fast-variant).
+Everything below holds per profile; the names shown are the standard ones.
+
 ## The daily run
 
 Every UTC day the scheduled job runs the same controller in `daily` mode.
@@ -80,12 +97,12 @@ After the unchanged #215 candidate stages end at `submit-candidate PREPARED`,
 the daily stages run:
 
 1. **prepare-consumer** — the rendered all-HEAD topology is committed as its
-   own testnet directory `testnets/cardano_node_head/` **on the exact run-base
+   own testnet directory `testnets/cardano-node-head/` **on the exact run-base
    commit itself**: that SHA is fetched and checked out directly, so a
    `main` that moved mid-run (the normal case on an active repository)
    changes nothing. A run base that can no longer be fetched — history
    rewritten away — fails closed with `run base is unfetchable`. The
-   mixed-version `cardano_node_master` profile is untouched.
+   mixed-version `cardano-node-releases` profile is untouched.
 2. **construct-request** — the exact dispatch identity (workflow file, claim
    tag, testnet directory, duration, fault setting) is validated and recorded
    before anything is submitted. A request that cannot be constructed stops
@@ -96,10 +113,10 @@ the daily stages run:
    concurrent or after-failure invocation is refused (`day-already-claimed`)
    before any MOOG contact, and the tag is never re-pointed.
 4. **submit-run** — the existing `cardano-node.yaml` MOOG workflow is
-   dispatched at the claim tag with `test=cardano_node_head`, `duration=3`,
+   dispatched at the claim tag with `test=cardano-node-head`, `duration=3`,
    `no-faults=false`, and a unique correlation marker carried into the run
    title (`correlation=<marker>`); the transport then selects the run whose
-   display title equals `cardano_node_head [<marker>]` exactly — one real
+   display title equals `cardano-node-head [<marker>]` exactly — one real
    three-hour, fault-injected run, never a neighbouring one.
 5. **await-run** — the dispatched run is watched and its `moog-correlation`
    artifact read back; the terminal record correlates the MOOG test id,

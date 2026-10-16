@@ -4,11 +4,11 @@ run-name: >-
      format('{0} [{1}]', inputs.test, inputs.correlation) ||
      'Antithesis on cardano-node testnet' }}
 env:
-  # workflow_dispatch passes `inputs.test`; cron has no inputs so
-  # falls through to the default. Without the `inputs.test` lookup
-  # here, every manual dispatch silently ran against
-  # cardano_node_master regardless of the -f test=... flag.
-  TESTNET: ${{ inputs.test || 'cardano_node_master' }}
+  # workflow_dispatch passes `inputs.test`; cron has no inputs, so the
+  # testnet follows from which schedule fired. Without the `inputs.test`
+  # lookup here, every manual dispatch silently ran against the default
+  # regardless of the -f test=... flag.
+  TESTNET: ${{ inputs.test || (github.event.schedule == '5 13 * * *' && 'cardano-node-releases-fast') || 'cardano-node-releases' }}
   REGISTRY: ghcr.io/cardano-foundation/cardano-node-antithesis
   EMAILS: 'antithesis@cardanofoundation.org'
   DURATION: ${{ inputs.duration || 4 }}
@@ -19,7 +19,7 @@ on:
        test:
         description: 'Test configuration to run (a directory in testnets)'
         required: true
-        default: cardano_node_master
+        default: cardano-node-releases
         type: string
        duration:
         description: 'Test duration (in hours)'
@@ -40,8 +40,9 @@ on:
         default: ''
         type: string
   schedule:
-    # run once a day
+    # once a day each, 12 h apart: releases at 01:05, releases-fast at 13:05
     - cron:  '5 1 * * *'
+    - cron:  '5 13 * * *'
 
 jobs:
   run-cardano-node:
@@ -122,7 +123,11 @@ jobs:
         # step's run-attempt guard, and the read-only MOOG census refusal
         # (a second sequential dispatch at the same consumer commit finds
         # an existing test-run and refuses).
-        if [ "$TESTNET" = "cardano_node_head" ] && [ "$RUN_ATTEMPT" != "1" ]; then
+        case "$TESTNET" in
+          cardano-node-head | cardano-node-head-fast) daily_head=true ;;
+          *) daily_head=false ;;
+        esac
+        if [ "$daily_head" = true ] && [ "$RUN_ATTEMPT" != "1" ]; then
           printf 'daily-head-rerun-refused: testnet=%s attempt=%s\n' "$TESTNET" "$RUN_ATTEMPT" >&2
           exit 1
         fi
@@ -130,7 +135,7 @@ jobs:
         TESTNET_DIR="testnets/$TESTNET"
         census=''
         if ! census=$(moog facts test-runs --whose "$MOOG_REQUESTER"); then
-          if [ "$TESTNET" = "cardano_node_head" ]; then
+          if [ "$daily_head" = true ]; then
             printf 'daily-head-census-unreadable: testnet=%s\n' "$TESTNET" >&2
           else
             printf 'moog census unreadable\n' >&2
@@ -151,7 +156,7 @@ jobs:
             and ((.key.repository.organization + "/" + .key.repository.repo) == $repository)
             and .key.requester == $requester
           )) | length')
-        if [ "$TESTNET" = "cardano_node_head" ] && [ "$existing" != "0" ]; then
+        if [ "$daily_head" = true ] && [ "$existing" != "0" ]; then
           printf 'daily-head-already-submitted: testnet=%s existing=%s\n' "$TESTNET" "$existing" >&2
           exit 1
         fi

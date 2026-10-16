@@ -31,7 +31,7 @@ just down
 ## Adding a new component
 
 1. Create `components/<name>/Dockerfile`
-2. Reference it in `testnets/cardano_node_master/docker-compose.yaml` as `ghcr.io/cardano-foundation/cardano-node-antithesis/<name>:<commit>`
+2. Reference it in `testnets/cardano-node-releases/docker-compose.yaml` as `ghcr.io/cardano-foundation/cardano-node-antithesis/<name>:<commit>`
 3. The `publish-images` workflow automatically builds and pushes on PR or merge to main
 
 <!-- MARKDOWN LINKS & IMAGES -->

@@ -18,11 +18,30 @@ set -euo pipefail
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 state_dir=${HEAD_CANDIDATE_STATE_DIR:?HEAD_CANDIDATE_STATE_DIR is required}
 receipt_file=${HEAD_CANDIDATE_RECEIPT:?HEAD_CANDIDATE_RECEIPT is required}
-source_model=${HEAD_CANDIDATE_SOURCE_MODEL:-$script_dir/../testnets/cardano_node_master/docker-compose.yaml}
+# The controller exports the profile; each profile renders its own source
+# model into its own HEAD testnet under its own day-claim namespace.
+profile=${HEAD_CANDIDATE_PROFILE:-standard}
+case "$profile" in
+  standard)
+    source_testnet=cardano-node-releases
+    head_testnet=cardano-node-head
+    claim_namespace=daily-cardano-node-head
+    ;;
+  fast)
+    source_testnet=cardano-node-releases-fast
+    head_testnet=cardano-node-head-fast
+    claim_namespace=daily-cardano-node-head-fast
+    ;;
+  *)
+    printf 'daily-cardano-node-head-github: unsupported profile: %s\n' "$profile" >&2
+    exit 1
+    ;;
+esac
+source_model=${HEAD_CANDIDATE_SOURCE_MODEL:-$script_dir/../testnets/$source_testnet/docker-compose.yaml}
 upstream_flake=${HEAD_CANDIDATE_UPSTREAM_FLAKE:-github:IntersectMBO/cardano-node}
 consumer_repository=${HEAD_CANDIDATE_REPOSITORY:-${GITHUB_REPOSITORY:-cardano-foundation/cardano-node-antithesis}}
 
-# The cardano_node_master network definition interpolates ${INTERNAL_NETWORK};
+# The cardano-node-releases network definition interpolates ${INTERNAL_NETWORK};
 # an unset value is an invalid boolean for Compose, so every Compose
 # invocation below defaults it and the caller may still override.
 compose() {
@@ -209,7 +228,7 @@ case "$operation" in
       daily | validation) ;;
       *) die "unknown run mode: $run_mode" ;;
     esac
-    [ "$testnet" = cardano_node_head ] || die 'consumer directory is not the HEAD testnet'
+    [ "$testnet" = "$head_testnet" ] || die 'consumer directory is not the HEAD testnet'
     [ -f "$rendered_model" ] || die 'rendered model is absent'
     grep -Fq -- "image: $candidate_ref" "$rendered_model" ||
       die 'rendered model does not carry the candidate image'
@@ -254,8 +273,8 @@ case "$operation" in
     require_commands git gh
     claim_ref=${1:?claim ref is required}
     consumer_sha=${2:?consumer SHA is required}
-    [[ "$claim_ref" =~ ^refs/tags/daily-cardano-node-head(/validation)?/[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
-      die "claim ref is not a day tag: $claim_ref"
+    [[ "$claim_ref" =~ ^refs/tags/${claim_namespace}(/validation)?/[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] ||
+      die "claim ref is not a day tag of profile $profile: $claim_ref"
     [[ "$consumer_sha" =~ ^[0-9a-f]{40}$ ]] || die "invalid consumer SHA: $consumer_sha"
     directory=$state_dir/consumer
     [ -d "$directory/.git" ] || die 'consumer workspace is absent'
@@ -294,7 +313,7 @@ case "$operation" in
     testnet=${3:?testnet is required}
     duration=${4:?duration is required}
     no_faults=${5:?fault setting is required}
-    [ "$testnet" = cardano_node_head ] || die 'submit target is not the HEAD testnet'
+    [ "$testnet" = "$head_testnet" ] || die 'submit target is not the HEAD testnet'
     case "$duration" in
       1 | 3) ;;
       *) die 'duration is outside the frozen contract' ;;

@@ -3,7 +3,7 @@ SHELL:=/usr/bin/env bash
 .SILENT: build-shared build-config push push-image push-config up down query validate
 
 registry:=ghcr.io/cardano-foundation/cardano-node-antithesis
-testnet:=cardano_node_master
+testnet:=cardano-node-releases
 source:=https://github.com/cardano-foundation/cardano-node-antithesis
 
 export registry

@@ -64,7 +64,7 @@ jobs:
     - name: Collect images to publish
       id: images
       run: |
-        scripts/push-cardano_node_master_images.sh
+        scripts/push-images.sh
 
   smoke-test:
     name: Compose smoke test
@@ -77,7 +77,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref_name || '' }}
       - name: Run smoke test
-        run: ./scripts/smoke-test.sh cardano_node_master 600
+        run: ./scripts/smoke-test.sh cardano-node-releases 600
       - name: Run smoke test (cardano_amaru)
         env:
           AMARU_BOOTSTRAP_SMOKE_TIMEOUT: "900"

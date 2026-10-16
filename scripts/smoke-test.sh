@@ -6,7 +6,7 @@
 # Usage: scripts/smoke-test.sh [testnet] [timeout_seconds]
 set -euo pipefail
 
-TESTNET="${1:-cardano_node_master}"
+TESTNET="${1:-cardano-node-releases}"
 TIMEOUT="${2:-120}"
 COMPOSE_FILE="testnets/${TESTNET}/docker-compose.yaml"
 MAGIC=42
