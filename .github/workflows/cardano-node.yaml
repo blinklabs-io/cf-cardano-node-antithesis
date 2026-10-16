@@ -178,7 +178,7 @@ jobs:
         echo "txHash=$TXID" >> "$GITHUB_OUTPUT"
 
     - name: Wait for results
-      run: timeout $(((DURATION + 1) * 3600)) ./scripts/wait-for-test.sh "${{ steps.request.outputs.id }}"
+      run: timeout $(((DURATION + 3) * 3600)) ./scripts/wait-for-test.sh "${{ steps.request.outputs.id }}"
 
     # The daily controller (daily-cardano-node-head.yaml) correlates its
     # terminal receipt with this run's MOOG test identity through this

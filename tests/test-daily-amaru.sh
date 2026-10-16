@@ -412,9 +412,12 @@ production_job_untouched() {
     "$base_commit:.github/workflows/daily-amaru.yaml" >"$base_workflow" || return 1
   # The base is read as it stood before the 2026-10-14 runtime bump: the
   # app-token action moved to its Node 24 major and the runner label to a pinned
-  # image. Any other difference in the production job still fails.
+  # image, and the 2026-10-16 wait bump: the job timeout moved from 180 to 360
+  # minutes (proved by tests/test-wait-bounds.sh). Any other difference in the
+  # production job still fails.
   sed -i -e 's#actions/create-github-app-token@v1#actions/create-github-app-token@v3#' \
-    -e 's#runs-on: ubuntu-latest#runs-on: ubuntu-24.04#' "$base_workflow" || return 1
+    -e 's#runs-on: ubuntu-latest#runs-on: ubuntu-24.04#' \
+    -e 's#^    timeout-minutes: 180$#    timeout-minutes: 360#' "$base_workflow" || return 1
   cmp -s \
     <(workflow_job "$file" daily-amaru-scheduled) \
     <(workflow_job "$base_workflow" daily-amaru-scheduled)
