@@ -11,7 +11,7 @@ env:
   TESTNET: ${{ inputs.test || 'cardano_node_master' }}
   REGISTRY: ghcr.io/cardano-foundation/cardano-node-antithesis
   EMAILS: 'antithesis@cardanofoundation.org'
-  DURATION: ${{ inputs.duration || 3 }}
+  DURATION: ${{ inputs.duration || 4 }}
 on:
   # can be dispatched manually
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
        duration:
         description: 'Test duration (in hours)'
         required: false
-        default: 3
+        default: 4
         type: number
        no-faults:
         description: 'Run the test without injecting faults'
@@ -40,8 +40,8 @@ on:
         default: ''
         type: string
   schedule:
-    # run every 6 hours
-    - cron:  '5 1,7,13,19 * * *'
+    # run once a day
+    - cron:  '5 1 * * *'
 
 jobs:
   run-cardano-node:
