@@ -207,7 +207,7 @@ services:
       # securityParam of testnet.yaml: the tracer-sidecar default is the
       # releases testnet k = 432. Only images from 08d3c68 on read it; older
       # ones judge fork depth against 432 and count a lagging node as a fork.
-      SECURITY_PARAM: "20"
+      SECURITY_PARAM: "200"
     volumes:
       - tracer:/opt/cardano-tracer
     restart: always

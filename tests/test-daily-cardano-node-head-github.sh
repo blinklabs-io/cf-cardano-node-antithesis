@@ -1252,9 +1252,9 @@ run_transport render-fast-profile env \
   HEAD_CANDIDATE_PROFILE=fast \
   "$transport" render-topology "$candidate_ref"
 require_success
-grep -Fqx 'epochLength: 1000' "$case_state/testnet.yaml" ||
+grep -Fqx 'epochLength: 10000' "$case_state/testnet.yaml" ||
   fail 'fast profile did not render the cardano-node-releases-fast genesis'
-grep -Fq 'SECURITY_PARAM: "20"' "$case_state/docker-compose.yaml" ||
+grep -Fq 'SECURITY_PARAM: "200"' "$case_state/docker-compose.yaml" ||
   fail 'fast profile render lost the tracer-sidecar security parameter'
 [ "$(grep -Fc -- "image: $candidate_ref" "$case_state/docker-compose.yaml")" -eq 7 ] ||
   fail 'fast profile render does not pin the candidate on every node'

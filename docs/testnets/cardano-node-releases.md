@@ -225,18 +225,23 @@ never reaches one.
 
 | parameter | releases | releases-fast |
 |---|---|---|
-| `securityParam` (k) | 432 | 20 |
+| `securityParam` (k) | 432 | 200 |
 | `activeSlotsCoeff` (f) | 0.05 | 0.2 |
 | `slotLength` | 1 s | 0.5 s |
-| `epochLength` | 86400 slots (24 h) | 1000 slots (500 s) |
+| `epochLength` | 86400 slots (24 h) | 10000 slots (5000 s) |
 
 Both keep `epochLength` at 10k/f, the Praos sizing that fits the stability
 window (3k/f) and the randomness stabilisation window (4k/f) inside one epoch.
-The fast variant pays with a short fork tolerance: k blocks are about 50 s of
-producer divergence. The tracer-sidecar receives `SECURITY_PARAM: "20"`.
+The fast variant pays with a shorter fork tolerance: k blocks are about 500 s
+of producer divergence, so a network split survives at most about 1/5 of an
+epoch. A node never rolls back more than k blocks, so a longer split forks the
+cluster for good. With k = 20 (50 s) Antithesis network faults did that in
+every run, and k = 100 did it in a one-hour run; k = 200 held. The
+tracer-sidecar receives `SECURITY_PARAM: "200"`.
 
 The scheduled `cardano-node.yaml` runs releases at 01:05 UTC and
-releases-fast at 13:05 UTC, 4 h each.
+releases-fast at 13:05 UTC, 4 h each, so a releases-fast run crosses two epoch
+boundaries.
 
 ## Running locally
 
