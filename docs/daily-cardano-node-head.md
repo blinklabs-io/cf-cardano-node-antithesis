@@ -82,7 +82,7 @@ so the two daily runs never consume each other's claim:
 | `fast` | `cardano-node-releases-fast` | `cardano-node-head-fast` | `daily-cardano-node-head-fast/…` | 14:23 UTC |
 
 The workflow picks `fast` for the 14:23 schedule or when dispatched with
-`fast: true`, and `standard` otherwise. The fast genesis (500 s epochs) is
+`fast: true`, and `standard` otherwise. The fast genesis (5000 s epochs) is
 described in [cardano-node-releases](testnets/cardano-node-releases.md#fast-variant).
 Everything below holds per profile; the names shown are the standard ones.
 

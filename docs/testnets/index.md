@@ -42,4 +42,4 @@ The `justfile` wraps `docker compose` commands. All images must be available loc
 ## Available testnets
 
 - [cardano-node-releases](cardano-node-releases.md): Mixed-version testnet with producers, relays, tracer observability, Asteria Plutus workload pressure, and tx-generator ADA-transfer pressure
-- [cardano-node-releases-fast](cardano-node-releases.md#fast-variant): The same cluster with 500 s epochs, so a run crosses epoch boundaries
+- [cardano-node-releases-fast](cardano-node-releases.md#fast-variant): The same cluster with 5000 s epochs, so a run crosses epoch boundaries

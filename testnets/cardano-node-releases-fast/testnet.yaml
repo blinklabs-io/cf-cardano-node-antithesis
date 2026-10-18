@@ -11,12 +11,12 @@ testnetDomain: example
 
 --- # Optional Byron Genesis Overide
 protocolConsts:
-  k: 20
+  k: 200
 
 --- # Optional Shelley Genesis Overide
 slotLength: 0.5
-epochLength: 1000
-securityParam: 20
+epochLength: 10000
+securityParam: 200
 activeSlotsCoeff: 0.2
 maxLovelaceSupply: 45000000000000000
 protocolParams:
