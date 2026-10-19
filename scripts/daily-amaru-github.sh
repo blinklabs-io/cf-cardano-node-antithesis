@@ -716,6 +716,13 @@ classify_proposal_branch() {
     return 0
   fi
 
+  # Main already contains the branch (its proposal was merged): it holds no
+  # unmerged work, and a new proposal on main fast-forwards it.
+  if git -C "$directory" merge-base --is-ancestor "$remote_ref" origin/main; then
+    printf 'merged\n'
+    return 0
+  fi
+
   merge_base=$(git -C "$directory" merge-base origin/main "$remote_ref") || return 1
   main_sha=$(git -C "$directory" rev-parse origin/main) || return 1
   commit_count=$(git -C "$directory" rev-list --count "$merge_base..$remote_ref") ||
@@ -983,7 +990,7 @@ case "$operation" in
       foreign)
         die 'foreign-proposal-branch'
         ;;
-      absent)
+      absent | merged)
         git -C "$directory" checkout -b "$branch" origin/main
         (
           cd "$directory"
