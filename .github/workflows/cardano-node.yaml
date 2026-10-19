@@ -11,7 +11,7 @@ env:
   TESTNET: ${{ inputs.test || (github.event.schedule == '5 13 * * *' && 'cardano-node-releases-fast') || 'cardano-node-releases' }}
   REGISTRY: ghcr.io/cardano-foundation/cardano-node-antithesis
   EMAILS: 'antithesis@cardanofoundation.org'
-  DURATION: ${{ inputs.duration || 4 }}
+  DURATION: ${{ inputs.duration || 3 }}
 on:
   # can be dispatched manually
   workflow_dispatch:
@@ -24,7 +24,7 @@ on:
        duration:
         description: 'Test duration (in hours)'
         required: false
-        default: 4
+        default: 3
         type: number
        no-faults:
         description: 'Run the test without injecting faults'
