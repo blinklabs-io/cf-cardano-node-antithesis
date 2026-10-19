@@ -1589,12 +1589,55 @@ assert_pinned_adopt() {
   ! grep -Fq 'gh pr create' "$effects" || fail 'already-pinned adopt attempted to create a PR'
 }
 
+# A same-day proposal already merged into main (2026-10-19: a hand-landed
+# refresh carried the nightly bump commit) holds no unmerged work. The next
+# attempt proposes again on main, fast-forwarding the old branch.
+assert_merged_proposal_refreshed() {
+  local remote work before output remote_head changed commits
+  remote=$(create_remote merged-proposal)
+  before=$(seed_proposal "$remote" atomic)
+  work=$(mktemp -d "$tmp_root/merge-proposal.XXXXXX")
+  git clone --quiet "file://$remote" "$work"
+  git -C "$work" config user.name boundary
+  git -C "$work" config user.email boundary@example.invalid
+  git -C "$work" merge --quiet --no-ff -m 'merge proposal' "origin/$branch"
+  git -C "$work" push --quiet origin HEAD:refs/heads/main
+  export DAILY_AMARU_BOUNDARY_RESOLVED_AT=2026-10-19T09:28:18Z
+  run_transport merged-proposal "$remote"
+  unset DAILY_AMARU_BOUNDARY_RESOLVED_AT
+  output=$(cat "$stdout")
+  [ "$transport_rc" -eq 0 ] ||
+    fail "merged proposal was not refreshed: $(tr '\n' ' ' <"$stderr")"
+  remote_head=$(git --git-dir="$remote" rev-parse "refs/heads/$branch")
+  [ "$output" = "$remote_head" ] || fail 'merged proposal output differs from pushed head'
+  git --git-dir="$remote" merge-base --is-ancestor "$before" "$remote_head" ||
+    fail 'merged proposal refresh did not fast-forward the old branch'
+  changed=$(git --git-dir="$remote" diff --name-only main "$branch" | sort)
+  [ "$changed" = nix/peer-snapshots/resolution.json ] ||
+    fail "merged proposal refresh changed: $changed"
+  commits=$(git --git-dir="$remote" rev-list --count "main..$branch")
+  [ "$commits" -eq 1 ] || fail "merged proposal refresh commits=$commits, want 1"
+  grep -Fq 'gh pr create' "$effects" || fail 'merged proposal refresh did not create its PR'
+}
+
+assert_merged_proposal_mutant() {
+  local merged="$tmp_root/mutants/merged.sh"
+  mkdir -p "$tmp_root/mutants"
+  sed "s/printf 'merged\\\\n'/printf 'foreign\\\\n'/" "$transport" >"$merged"
+  grep -Fq "printf 'merged\\n'" "$merged" && fail 'merged mutation did not apply'
+  chmod +x "$merged"
+  reject_scenario_mutant merged "$merged" merged-proposal \
+    'merged proposal was not refreshed'
+}
+
 assert_atomic_peer_snapshot() {
   local field kind
   launches=0
   assert_atomic_fresh
   assert_pinned_fresh
   assert_pinned_adopt
+  assert_merged_proposal_refreshed
+  assert_merged_proposal_mutant
   assert_resolver_token
   assert_atomic_adopt
   assert_pr86_foreign
@@ -2259,6 +2302,9 @@ case "$scenario" in
   atomic-pinned)
     assert_pinned_fresh
     assert_pinned_adopt
+    ;;
+  merged-proposal)
+    assert_merged_proposal_refreshed
     ;;
   atomic-resolver-fail)
     assert_named_resolver_failure network
